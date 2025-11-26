@@ -1,6 +1,6 @@
 # Chess Engine
 
-A high-performance chess engine based on bitboards, Numba JIT compilation, and a Pygame graphical interface. The standard play mode includes player vs player and player vs AI. It also remembers the history of moves, highlights possible legal moves, and provides smooth interactions.
+A high-performance chess engine based on bitboards, Numba JIT compilation, and a Pygame graphical interface. The standard play mode includes player vs player and player vs AI. It also remembers the history of moves, highlights possible legal moves, and provides smooth interactions.(engine is under construction :) )
 
 ## Project Overview
 
@@ -102,7 +102,7 @@ A stronger AI can be integrated using minimax, alpha-beta pruning, heuristics, a
 - Use compatible versions.
 
 ## Future Improvements (Planned)
-
+- Chess Engine
 - Opening book
 - Endgame tablebases
 - ELO rating
