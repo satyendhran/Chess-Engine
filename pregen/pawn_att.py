@@ -1,8 +1,7 @@
-import numpy as np
 from numba import njit
 from numba.types import uint8 as u8  # type:ignore
 from numba.types import uint64 as u64  # type:ignore
-from Utilities import Color, print_bitboard, save_pregen
+from Utilities import Color, save_pregen
 
 
 @njit(u64(u8, u8))
@@ -12,9 +11,15 @@ def pawn_att(square, color):
 
     pawn_sq = 1 << square
     if color == Color.BLACK:
-        att1, att2 = 1 << (square + 9), 1 << (square + 7)
+        att1, att2 = (
+            1 << (square + 9),
+            1 << (square + 7),
+        )
     else:
-        att1, att2 = 1 << (square - 7), 1 << (square - 9)
+        att1, att2 = (
+            1 << (square - 7),
+            1 << (square - 9),
+        )
 
     att = 0
     if not (pawn_sq & H_FILE):

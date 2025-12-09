@@ -2,7 +2,7 @@ import numpy as np
 from numba import njit
 from numba.types import uint8 as u8  # type:ignore
 from numba.types import uint64 as u64  # type:ignore
-from Utilities import Color, count_bits, print_bitboard, save_pregen
+from Utilities import count_bits, save_pregen
 
 
 @njit(u64(u8))
@@ -71,10 +71,20 @@ def rook_att(square: int, occupancy: int) -> int:
 #     input()
 
 if __name__ == "__main__":
-    rook_mask_pregen = np.array([mask_rook_att(x) for x in range(64)], dtype=np.uint64)
-    save_pregen("ROOK_MASK.npy", rook_mask_pregen)
+    rook_mask_pregen = np.array(
+        [mask_rook_att(x) for x in range(64)],
+        dtype=np.uint64,
+    )
+    save_pregen(
+        "ROOK_MASK.npy",
+        rook_mask_pregen,
+    )
 
     rook_relevent_bits = np.array(
-        [count_bits(mask_rook_att(x)) for x in range(64)], dtype=np.uint8
+        [count_bits(mask_rook_att(x)) for x in range(64)],
+        dtype=np.uint8,
     )
-    save_pregen("ROOK_RELEVENT_BITS.npy", rook_relevent_bits)
+    save_pregen(
+        "ROOK_RELEVENT_BITS.npy",
+        rook_relevent_bits,
+    )

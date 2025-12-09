@@ -22,7 +22,11 @@ def pop_bit(bitboard: int, square: int) -> int:
     return bitboard ^ (1 << square)
 
 
-def print_bitboard(bitboard: int, debug_square=64, highlight=False) -> None:
+def print_bitboard(
+    bitboard: int,
+    debug_square=64,
+    highlight=False,
+) -> None:
     cyan = "\033[36m"
     red = "\033[31m"
     reset = "\033[0m"
@@ -32,17 +36,25 @@ def print_bitboard(bitboard: int, debug_square=64, highlight=False) -> None:
                 print(8 - r, end="  ")
             square = 8 * r + f
             if square == debug_square:
-                print(f"{cyan}X{reset}", end=" ")
+                print(
+                    f"{cyan}X{reset}",
+                    end=" ",
+                )
                 continue
             if get_bit(bitboard, square=square):
-                print(f"{red}1{reset}", end=" ")
+                print(
+                    f"{red}1{reset}",
+                    end=" ",
+                )
             else:
-                print(f"0", end=" ")
+                print("0", end=" ")
         print()
     print("\n   a b c d e f g h")
     print(f"\n   Bitboard : {bitboard}")
     if debug_square < 64:
-        print(f"   Debug square Value : {get_bit(bitboard, square=debug_square)}")
+        print(
+            f"   Debug square Value : {get_bit(bitboard, square=debug_square)}"
+        )
 
 
 class Color(IntEnum):
@@ -52,9 +64,17 @@ class Color(IntEnum):
 
 def save_pregen(name, arr):
     if isinstance(arr, list):
-        np.save(os.path.join(name), np.array(arr, dtype=np.uint64), allow_pickle=True)
+        np.save(
+            os.path.join(name),
+            np.array(arr, dtype=np.uint64),
+            allow_pickle=True,
+        )
         return
-    np.save(os.path.join(name), arr=arr, allow_pickle=True)
+    np.save(
+        os.path.join(name),
+        arr=arr,
+        allow_pickle=True,
+    )
 
 
 @njit(u8(u64))

@@ -3,7 +3,7 @@ from random import getrandbits
 
 import numpy as np
 from bishop_att import bishop_att, mask_bishop_att
-from numba import njit, prange
+from numba import njit
 from numba.types import uint8 as u8  # type:ignore
 from numba.types import uint32 as u32  # type:ignore
 from numba.types import uint64 as u64  # type:ignore
@@ -43,8 +43,19 @@ def find_magic_number_bishop(state, square, relevant_bits):
     occupancy_indices = np.uint64(1) << relevant_bits
 
     for index in range(occupancy_indices):
-        occupancies[index] = np.uint64(set_occupancy(index, relevant_bits, attack_mask))
-        attacks[index] = np.uint64(bishop_att(square, occupancies[index]))
+        occupancies[index] = np.uint64(
+            set_occupancy(
+                index,
+                relevant_bits,
+                attack_mask,
+            )
+        )
+        attacks[index] = np.uint64(
+            bishop_att(
+                square,
+                occupancies[index],
+            )
+        )
 
     for _ in range(10**6):
         state = get_64_bit_random_number(state)
@@ -74,16 +85,32 @@ def find_magic_number_bishop(state, square, relevant_bits):
 
             if not fail:
                 return np.array(
-                    [magic_number, np.uint64(shift)], dtype=np.uint64
+                    [
+                        magic_number,
+                        np.uint64(shift),
+                    ],
+                    dtype=np.uint64,
                 )  # store shift in high bits
 
-    return np.array([np.uint64(0), np.uint64(0)], dtype=np.uint64)  # Failed
+    return np.array(
+        [np.uint64(0), np.uint64(0)],
+        dtype=np.uint64,
+    )  # Failed
 
 
 # === Driver with retries ===
-bishop_relevant_bits = np.load("BISHOP_RELEVENT_BITS.npy", allow_pickle=True)
-bishop_magics = np.load("BISHOP_MAGICS.npy", allow_pickle=True)
-bishop_shifts = np.load("BISHOP_SHIFTS.npy", allow_pickle=True)
+bishop_relevant_bits = np.load(
+    "BISHOP_RELEVENT_BITS.npy",
+    allow_pickle=True,
+)
+bishop_magics = np.load(
+    "BISHOP_MAGICS.npy",
+    allow_pickle=True,
+)
+bishop_shifts = np.load(
+    "BISHOP_SHIFTS.npy",
+    allow_pickle=True,
+)
 failed_squares = []
 
 state = np.uint64(getrandbits(32))
@@ -96,7 +123,9 @@ for sq in range(64):
 
     for attempt in range(5):
         magic, shift = find_magic_number_bishop(
-            state, np.uint64(sq), np.uint64(bishop_relevant_bits[sq])
+            state,
+            np.uint64(sq),
+            np.uint64(bishop_relevant_bits[sq]),
         )
         if magic != 0:
             bishop_magics[sq] = magic
@@ -118,14 +147,20 @@ save_pregen("BISHOP_SHIFTS.npy", bishop_shifts)
 
 # Second pass for failed squares (10 attempts each)
 if failed_squares:
-    print(f"\nRetrying {len(failed_squares)} failed squares with fresh states...")
+    print(
+        f"\nRetrying {len(failed_squares)} failed squares with fresh states..."
+    )
     for sq in failed_squares[:]:
         found = False
         for _ in range(20):  # fixed at 10 attempts
-            print(f"Finding magic number for bishop on square {sq} attempt {_ + 1}")
+            print(
+                f"Finding magic number for bishop on square {sq} attempt {_ + 1}"
+            )
             state = np.uint64(getrandbits(32))
             magic, shift = find_magic_number_bishop(
-                state, np.uint8(sq), np.uint8(bishop_relevant_bits[sq])
+                state,
+                np.uint8(sq),
+                np.uint8(bishop_relevant_bits[sq]),
             )
             if magic != 0:
                 bishop_magics[sq] = magic
@@ -156,8 +191,19 @@ def find_magic_number_rook(state, square, relevant_bits):
     occupancy_indices = np.uint64(1) << relevant_bits
 
     for index in range(occupancy_indices):
-        occupancies[index] = np.uint64(set_occupancy(index, relevant_bits, attack_mask))
-        attacks[index] = np.uint64(rook_att(square, occupancies[index]))
+        occupancies[index] = np.uint64(
+            set_occupancy(
+                index,
+                relevant_bits,
+                attack_mask,
+            )
+        )
+        attacks[index] = np.uint64(
+            rook_att(
+                square,
+                occupancies[index],
+            )
+        )
 
     for _ in range(10**6):
         state = get_64_bit_random_number(state)
@@ -186,23 +232,38 @@ def find_magic_number_rook(state, square, relevant_bits):
                     break
 
             if not fail:
-                return np.array([magic_number, (np.uint64(shift))], dtype=np.uint64)
+                return np.array(
+                    [
+                        magic_number,
+                        (np.uint64(shift)),
+                    ],
+                    dtype=np.uint64,
+                )
 
             shift -= 1
 
     return np.array([0, 0], dtype=np.uint64)
 
 
-rook_relevant_bits = np.load("ROOK_RELEVENT_BITS.npy", allow_pickle=True)
+rook_relevant_bits = np.load(
+    "ROOK_RELEVENT_BITS.npy",
+    allow_pickle=True,
+)
 
 # Create magics/shifts arrays if not existing
 if exists("ROOK_MAGICS.npy"):
-    rook_magics = np.load("ROOK_MAGICS.npy", allow_pickle=True)
+    rook_magics = np.load(
+        "ROOK_MAGICS.npy",
+        allow_pickle=True,
+    )
 else:
     rook_magics = np.zeros(64, dtype=np.uint64)
 
 if exists("ROOK_SHIFTS.npy"):
-    rook_shifts = np.load("ROOK_SHIFTS.npy", allow_pickle=True)
+    rook_shifts = np.load(
+        "ROOK_SHIFTS.npy",
+        allow_pickle=True,
+    )
 else:
     rook_shifts = np.zeros(64, dtype=np.uint64)
 
@@ -218,12 +279,16 @@ for sq in range(64):
 
     for attempt in range(5):
         magic, shift = find_magic_number_rook(
-            state, np.uint8(sq), np.uint8(rook_relevant_bits[sq])
+            state,
+            np.uint8(sq),
+            np.uint8(rook_relevant_bits[sq]),
         )
         if magic != 0:
             rook_magics[sq] = magic
             rook_shifts[sq] = shift
-            print(f"Magic number for rook on square {sq} is {magic} with shift {shift}")
+            print(
+                f"Magic number for rook on square {sq} is {magic} with shift {shift}"
+            )
             found = True
             break
         state = get_64_bit_random_number(state)
@@ -237,14 +302,20 @@ save_pregen("ROOK_SHIFTS.npy", rook_shifts)
 
 # Second pass for failed squares
 if failed_squares:
-    print(f"\nRetrying {len(failed_squares)} failed squares with fresh states...")
+    print(
+        f"\nRetrying {len(failed_squares)} failed squares with fresh states..."
+    )
     for sq in failed_squares[:]:
         found = False
         for _ in range(10):
-            print(f"Finding magic number for rook on square {sq} attempt {_ + 1}")
+            print(
+                f"Finding magic number for rook on square {sq} attempt {_ + 1}"
+            )
             state = get_64_bit_random_number(state)
             magic, shift = find_magic_number_rook(
-                state, np.uint8(sq), np.uint8(rook_relevant_bits[sq])
+                state,
+                np.uint8(sq),
+                np.uint8(rook_relevant_bits[sq]),
             )
             if magic != 0:
                 rook_magics[sq] = magic

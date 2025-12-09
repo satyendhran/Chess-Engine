@@ -3,19 +3,38 @@ from numba import njit
 from numba.types import uint8 as u8  # type:ignore
 from numba.types import uint64 as u64  # type:ignore
 
-from pregen.Utilities import print_bitboard
+pawn_att = np.load(
+    "PAWN_ATTACKS.npy",
+    allow_pickle=True,
+)
+knight_att = np.load(
+    "KNIGHT_ATTACKS.npy",
+    allow_pickle=True,
+)
+king_att = np.load(
+    "KING_ATTACKS.npy",
+    allow_pickle=True,
+)
 
-pawn_att = np.load("PAWN_ATTACKS.npy", allow_pickle=True)
-knight_att = np.load("KNIGHT_ATTACKS.npy", allow_pickle=True)
-king_att = np.load("KING_ATTACKS.npy", allow_pickle=True)
-
-bishop_att = np.load("BISHOP_ATTACKS.npy", allow_pickle=True)
-rook_att = np.load("ROOK_ATTACKS.npy", allow_pickle=True)
+bishop_att = np.load(
+    "BISHOP_ATTACKS.npy",
+    allow_pickle=True,
+)
+rook_att = np.load(
+    "ROOK_ATTACKS.npy",
+    allow_pickle=True,
+)
 bishop_mask = np.load("BISHOP_MASK.npy", allow_pickle=True)
 rook_mask = np.load("ROOK_MASK.npy", allow_pickle=True)
-bishop_shift = np.load("BISHOP_SHIFTS.npy", allow_pickle=True)
+bishop_shift = np.load(
+    "BISHOP_SHIFTS.npy",
+    allow_pickle=True,
+)
 rook_shift = np.load("ROOK_SHIFTS.npy", allow_pickle=True)
-bishop_magic = np.load("BISHOP_MAGICS.npy", allow_pickle=True)
+bishop_magic = np.load(
+    "BISHOP_MAGICS.npy",
+    allow_pickle=True,
+)
 rook_magic = np.load("ROOK_MAGICS.npy", allow_pickle=True)
 
 

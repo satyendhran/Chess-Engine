@@ -1,8 +1,7 @@
-import numpy as np
 from numba import njit
 from numba.types import uint8 as u8  # type:ignore
 from numba.types import uint64 as u64  # type:ignore
-from Utilities import Color, print_bitboard, save_pregen
+from Utilities import save_pregen
 
 
 @njit(u64(u8))
