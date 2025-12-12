@@ -127,7 +127,7 @@ class Board:
             self.enpassant,
             self.halfmove,
         )
-
+spec = []
 @njit(u64(u64, u8))
 def get_bit(bitboard: int, square: int) -> int:
     return (bitboard >> square) & (1)
