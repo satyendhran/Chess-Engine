@@ -52,9 +52,7 @@ def print_bitboard(
     print("\n   a b c d e f g h")
     print(f"\n   Bitboard : {bitboard}")
     if debug_square < 64:
-        print(
-            f"   Debug square Value : {get_bit(bitboard, square=debug_square)}"
-        )
+        print(f"   Debug square Value : {get_bit(bitboard, square=debug_square)}")
 
 
 class Color(IntEnum):

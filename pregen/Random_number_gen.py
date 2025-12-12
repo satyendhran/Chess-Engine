@@ -147,15 +147,11 @@ save_pregen("BISHOP_SHIFTS.npy", bishop_shifts)
 
 # Second pass for failed squares (10 attempts each)
 if failed_squares:
-    print(
-        f"\nRetrying {len(failed_squares)} failed squares with fresh states..."
-    )
+    print(f"\nRetrying {len(failed_squares)} failed squares with fresh states...")
     for sq in failed_squares[:]:
         found = False
         for _ in range(20):  # fixed at 10 attempts
-            print(
-                f"Finding magic number for bishop on square {sq} attempt {_ + 1}"
-            )
+            print(f"Finding magic number for bishop on square {sq} attempt {_ + 1}")
             state = np.uint64(getrandbits(32))
             magic, shift = find_magic_number_bishop(
                 state,
@@ -286,9 +282,7 @@ for sq in range(64):
         if magic != 0:
             rook_magics[sq] = magic
             rook_shifts[sq] = shift
-            print(
-                f"Magic number for rook on square {sq} is {magic} with shift {shift}"
-            )
+            print(f"Magic number for rook on square {sq} is {magic} with shift {shift}")
             found = True
             break
         state = get_64_bit_random_number(state)
@@ -302,15 +296,11 @@ save_pregen("ROOK_SHIFTS.npy", rook_shifts)
 
 # Second pass for failed squares
 if failed_squares:
-    print(
-        f"\nRetrying {len(failed_squares)} failed squares with fresh states..."
-    )
+    print(f"\nRetrying {len(failed_squares)} failed squares with fresh states...")
     for sq in failed_squares[:]:
         found = False
         for _ in range(10):
-            print(
-                f"Finding magic number for rook on square {sq} attempt {_ + 1}"
-            )
+            print(f"Finding magic number for rook on square {sq} attempt {_ + 1}")
             state = get_64_bit_random_number(state)
             magic, shift = find_magic_number_rook(
                 state,

@@ -7,15 +7,19 @@ from numba.types import uint32 as u32  # type:ignore
 
 from Board import Board, is_square_attacked, parse_fen
 from Constants import Castle, Color, Flag, Pieces, Square, square_to_coord
-from Move_gen_pieces import (get_bishop_attacks, get_king_attacks,
-                             get_knight_attacks, get_pawn_attacks,
-                             get_queen_attacks, get_rook_attacks)
+from Move_gen_pieces import (
+    get_bishop_attacks,
+    get_king_attacks,
+    get_knight_attacks,
+    get_pawn_attacks,
+    get_queen_attacks,
+    get_rook_attacks,
+)
 from pregen.Utilities import get_bit, get_lsb1_index, pop_bit, set_bit
 
 specs = [
     ("moves", u32[:]),
     ("counter", u8),
-    ("priorities", u8[:]),
 ]
 
 
@@ -49,7 +53,6 @@ class MoveList:
     def __init__(self):
         self.moves = np.zeros(218, dtype=np.uint32)
         self.counter = 0
-        self.priorities = np.zeros(218, dtype=np.uint8)
 
     def add(self, move):
         self.moves[self.counter] = move
@@ -58,18 +61,18 @@ class MoveList:
 
 @njit
 def Move_maker(
-        starting_square,
-        end_square,
-        flag,
-        starting_piece,
-        capture_piece,
+    starting_square,
+    end_square,
+    flag,
+    starting_piece,
+    capture_piece,
 ):
     return (
-            np.uint32(starting_square)
-            | np.uint32(end_square) << 6
-            | np.uint32(starting_piece) << 12
-            | np.uint32(capture_piece) << 16
-            | np.uint32(flag) << 20
+        np.uint32(starting_square)
+        | np.uint32(end_square) << 6
+        | np.uint32(starting_piece) << 12
+        | np.uint32(capture_piece) << 16
+        | np.uint32(flag) << 20
     )
 
 
@@ -77,23 +80,23 @@ def move_to_uci(move):
     flag = get_flag(move)
     promo_piece = None
     if flag in (
-            Flag.QUEEN_PROMOTION,
-            Flag.CAPTURE_PROMOTION_QUEEN,
+        Flag.QUEEN_PROMOTION,
+        Flag.CAPTURE_PROMOTION_QUEEN,
     ):
         promo_piece = "q"
     elif flag in (
-            Flag.ROOK_PROMOTION,
-            Flag.CAPTURE_PROMOTION_ROOK,
+        Flag.ROOK_PROMOTION,
+        Flag.CAPTURE_PROMOTION_ROOK,
     ):
         promo_piece = "r"
     elif flag in (
-            Flag.BISHOP_PROMOTION,
-            Flag.CAPTURE_PROMOTION_BISHOP,
+        Flag.BISHOP_PROMOTION,
+        Flag.CAPTURE_PROMOTION_BISHOP,
     ):
         promo_piece = "b"
     elif flag in (
-            Flag.KNIGHT_PROMOTION,
-            Flag.CAPTURE_PROMOTION_KNIGHT,
+        Flag.KNIGHT_PROMOTION,
+        Flag.CAPTURE_PROMOTION_KNIGHT,
     ):
         promo_piece = "n"
     uci = (
@@ -105,7 +108,7 @@ def move_to_uci(move):
 
 
 @njit()
-def Move_generator(board: Board, only_capture=False):
+def Move_generator(board: Board):
     moves = MoveList()
 
     if board.side == Color.WHITE:
@@ -114,9 +117,9 @@ def Move_generator(board: Board, only_capture=False):
             source_square = get_lsb1_index(bitboard)
             target_square = source_square - 8
             if target_square >= 0 and not get_bit(
-                    board.occupancy[Color.BOTH.value],
-                    target_square,
-            ) and not only_capture:
+                board.occupancy[Color.BOTH.value],
+                target_square,
+            ):
                 if Square.a7 <= source_square <= Square.h7:
                     moves.add(
                         Move_maker(
@@ -165,8 +168,8 @@ def Move_generator(board: Board, only_capture=False):
                         )
                     )
                     if Square.a2 <= source_square <= Square.h2 and not get_bit(
-                            board.occupancy[Color.BOTH.value],
-                            target_square - 8,
+                        board.occupancy[Color.BOTH.value],
+                        target_square - 8,
                     ):
                         moves.add(
                             Move_maker(
@@ -184,14 +187,14 @@ def Move_generator(board: Board, only_capture=False):
             while attack_bitboard:
                 target_square = get_lsb1_index(attack_bitboard)
                 if get_bit(
-                        board.occupancy[Color.BLACK.value],
-                        target_square,
+                    board.occupancy[Color.BLACK.value],
+                    target_square,
                 ):
                     capture_piece = Pieces.NONE
                     for x in range(12):
                         if get_bit(
-                                board.bitboard[x],
-                                target_square,
+                            board.bitboard[x],
+                            target_square,
                         ):
                             capture_piece = x
                             break
@@ -244,8 +247,8 @@ def Move_generator(board: Board, only_capture=False):
                         )
                 if target_square == board.enpassant:
                     if get_bit(
-                            board.occupancy[Color.BLACK.value],
-                            target_square + 8,
+                        board.occupancy[Color.BLACK.value],
+                        target_square + 8,
                     ):
                         moves.add(
                             Move_maker(
@@ -267,9 +270,9 @@ def Move_generator(board: Board, only_capture=False):
             source_square = get_lsb1_index(bitboard)
             target_square = source_square + 8
             if target_square < 64 and not get_bit(
-                    board.occupancy[Color.BOTH.value],
-                    target_square,
-            ) and not only_capture:
+                board.occupancy[Color.BOTH.value],
+                target_square,
+            ):
                 if Square.a2 <= source_square <= Square.h2:
                     moves.add(
                         Move_maker(
@@ -318,8 +321,8 @@ def Move_generator(board: Board, only_capture=False):
                         )
                     )
                     if Square.a7 <= source_square <= Square.h7 and not get_bit(
-                            board.occupancy[Color.BOTH.value],
-                            target_square + 8,
+                        board.occupancy[Color.BOTH.value],
+                        target_square + 8,
                     ):
                         moves.add(
                             Move_maker(
@@ -337,14 +340,14 @@ def Move_generator(board: Board, only_capture=False):
             while attack_bitboard:
                 target_square = get_lsb1_index(attack_bitboard)
                 if get_bit(
-                        board.occupancy[Color.WHITE.value],
-                        target_square,
+                    board.occupancy[Color.WHITE.value],
+                    target_square,
                 ):
                     capture_piece = Pieces.NONE
                     for x in range(12):
                         if get_bit(
-                                board.bitboard[x],
-                                target_square,
+                            board.bitboard[x],
+                            target_square,
                         ):
                             capture_piece = x
                             break
@@ -397,8 +400,8 @@ def Move_generator(board: Board, only_capture=False):
                         )
                 if target_square == board.enpassant:
                     if get_bit(
-                            board.occupancy[Color.WHITE.value],
-                            target_square - 8,
+                        board.occupancy[Color.WHITE.value],
+                        target_square - 8,
                     ):
                         moves.add(
                             Move_maker(
@@ -415,9 +418,7 @@ def Move_generator(board: Board, only_capture=False):
                 )
             bitboard = pop_bit(bitboard, source_square)
 
-    knight_piece = (
-        Pieces.N.value if board.side == Color.WHITE else Pieces.n.value
-    )
+    knight_piece = Pieces.N.value if board.side == Color.WHITE else Pieces.n.value
     opp = Color.BLACK.value if board.side == Color.WHITE else Color.WHITE.value
     bitboard = board.bitboard[knight_piece]
     while bitboard:
@@ -426,14 +427,14 @@ def Move_generator(board: Board, only_capture=False):
         while attack_bitboard:
             target_square = get_lsb1_index(attack_bitboard)
             if get_bit(
-                    board.occupancy[opp],
-                    target_square,
+                board.occupancy[opp],
+                target_square,
             ):
                 capture_piece = Pieces.NONE
                 for x in range(12):
                     if get_bit(
-                            board.bitboard[x],
-                            target_square,
+                        board.bitboard[x],
+                        target_square,
                     ):
                         capture_piece = x
                         break
@@ -447,9 +448,9 @@ def Move_generator(board: Board, only_capture=False):
                     )
                 )
             elif not get_bit(
-                    board.occupancy[Color.BOTH.value],
-                    target_square,
-            ) and not only_capture:
+                board.occupancy[Color.BOTH.value],
+                target_square,
+            ):
                 moves.add(
                     Move_maker(
                         source_square,
@@ -465,9 +466,7 @@ def Move_generator(board: Board, only_capture=False):
             )
         bitboard = pop_bit(bitboard, source_square)
 
-    bishop_piece = (
-        Pieces.B.value if board.side == Color.WHITE else Pieces.b.value
-    )
+    bishop_piece = Pieces.B.value if board.side == Color.WHITE else Pieces.b.value
     bitboard = board.bitboard[bishop_piece]
     while bitboard:
         source_square = get_lsb1_index(bitboard)
@@ -478,14 +477,14 @@ def Move_generator(board: Board, only_capture=False):
         while attack_bitboard:
             target_square = get_lsb1_index(attack_bitboard)
             if get_bit(
-                    board.occupancy[opp],
-                    target_square,
+                board.occupancy[opp],
+                target_square,
             ):
                 capture_piece = Pieces.NONE
                 for x in range(12):
                     if get_bit(
-                            board.bitboard[x],
-                            target_square,
+                        board.bitboard[x],
+                        target_square,
                     ):
                         capture_piece = x
                         break
@@ -499,9 +498,9 @@ def Move_generator(board: Board, only_capture=False):
                     )
                 )
             elif not get_bit(
-                    board.occupancy[Color.BOTH.value],
-                    target_square,
-            ) and not only_capture:
+                board.occupancy[Color.BOTH.value],
+                target_square,
+            ):
                 moves.add(
                     Move_maker(
                         source_square,
@@ -528,14 +527,14 @@ def Move_generator(board: Board, only_capture=False):
         while attack_bitboard:
             target_square = get_lsb1_index(attack_bitboard)
             if get_bit(
-                    board.occupancy[opp],
-                    target_square,
+                board.occupancy[opp],
+                target_square,
             ):
                 capture_piece = Pieces.NONE
                 for x in range(12):
                     if get_bit(
-                            board.bitboard[x],
-                            target_square,
+                        board.bitboard[x],
+                        target_square,
                     ):
                         capture_piece = x
                         break
@@ -549,9 +548,9 @@ def Move_generator(board: Board, only_capture=False):
                     )
                 )
             elif not get_bit(
-                    board.occupancy[Color.BOTH.value],
-                    target_square,
-            ) and not only_capture:
+                board.occupancy[Color.BOTH.value],
+                target_square,
+            ):
                 moves.add(
                     Move_maker(
                         source_square,
@@ -567,9 +566,7 @@ def Move_generator(board: Board, only_capture=False):
             )
         bitboard = pop_bit(bitboard, source_square)
 
-    queen_piece = (
-        Pieces.Q.value if board.side == Color.WHITE else Pieces.q.value
-    )
+    queen_piece = Pieces.Q.value if board.side == Color.WHITE else Pieces.q.value
     bitboard = board.bitboard[queen_piece]
     while bitboard:
         source_square = get_lsb1_index(bitboard)
@@ -580,14 +577,14 @@ def Move_generator(board: Board, only_capture=False):
         while attack_bitboard:
             target_square = get_lsb1_index(attack_bitboard)
             if get_bit(
-                    board.occupancy[opp],
-                    target_square,
+                board.occupancy[opp],
+                target_square,
             ):
                 capture_piece = Pieces.NONE
                 for x in range(12):
                     if get_bit(
-                            board.bitboard[x],
-                            target_square,
+                        board.bitboard[x],
+                        target_square,
                     ):
                         capture_piece = x
                         break
@@ -601,9 +598,9 @@ def Move_generator(board: Board, only_capture=False):
                     )
                 )
             elif not get_bit(
-                    board.occupancy[Color.BOTH.value],
-                    target_square,
-            ) and not only_capture:
+                board.occupancy[Color.BOTH.value],
+                target_square,
+            ):
                 moves.add(
                     Move_maker(
                         source_square,
@@ -627,14 +624,14 @@ def Move_generator(board: Board, only_capture=False):
         while attack_bitboard:
             target_square = get_lsb1_index(attack_bitboard)
             if get_bit(
-                    board.occupancy[opp],
-                    target_square,
+                board.occupancy[opp],
+                target_square,
             ):
                 capture_piece = Pieces.NONE
                 for x in range(12):
                     if get_bit(
-                            board.bitboard[x],
-                            target_square,
+                        board.bitboard[x],
+                        target_square,
                     ):
                         capture_piece = x
                         break
@@ -648,9 +645,9 @@ def Move_generator(board: Board, only_capture=False):
                     )
                 )
             elif not get_bit(
-                    board.occupancy[Color.BOTH.value],
-                    target_square,
-            ) and not only_capture:
+                board.occupancy[Color.BOTH.value],
+                target_square,
+            ):
                 moves.add(
                     Move_maker(
                         source_square,
@@ -671,36 +668,36 @@ def Move_generator(board: Board, only_capture=False):
         bitboardR = board.bitboard[Pieces.R.value]
 
         if (
-                get_bit(bitboardK, Square.e1)
-                and get_bit(bitboardR, Square.h1)
-                and not get_bit(
-            board.occupancy[Color.BOTH.value],
-            Square.f1,
-        )
-                and not get_bit(
-            board.occupancy[Color.BOTH.value],
-            Square.g1,
-        )
-                and (board.castle & Castle.WK)
-                and (
+            get_bit(bitboardK, Square.e1)
+            and get_bit(bitboardR, Square.h1)
+            and not get_bit(
+                board.occupancy[Color.BOTH.value],
+                Square.f1,
+            )
+            and not get_bit(
+                board.occupancy[Color.BOTH.value],
+                Square.g1,
+            )
+            and (board.castle & Castle.WK)
+            and (
                 not (
-                        is_square_attacked(
-                            board,
-                            Square.f1,
-                            Color.BLACK,
-                        )
-                        or is_square_attacked(
-                    board,
-                    Square.g1,
-                    Color.BLACK,
+                    is_square_attacked(
+                        board,
+                        Square.f1,
+                        Color.BLACK,
+                    )
+                    or is_square_attacked(
+                        board,
+                        Square.g1,
+                        Color.BLACK,
+                    )
+                    or is_square_attacked(
+                        board,
+                        Square.e1,
+                        Color.BLACK,
+                    )
                 )
-                        or is_square_attacked(
-                    board,
-                    Square.e1,
-                    Color.BLACK,
-                )
-                )
-        )
+            )
         ):
             moves.add(
                 Move_maker(
@@ -713,38 +710,38 @@ def Move_generator(board: Board, only_capture=False):
             )
 
         if (
-                get_bit(bitboardK, Square.e1)
-                and get_bit(bitboardR, Square.a1)
-                and not get_bit(
-            board.occupancy[Color.BOTH.value],
-            Square.d1,
-        )
-                and not get_bit(
-            board.occupancy[Color.BOTH.value],
-            Square.c1,
-        )
-                and not get_bit(
-            board.occupancy[Color.BOTH.value],
-            Square.b1,
-        )
-                and (board.castle & Castle.WQ)
-                and not (
+            get_bit(bitboardK, Square.e1)
+            and get_bit(bitboardR, Square.a1)
+            and not get_bit(
+                board.occupancy[Color.BOTH.value],
+                Square.d1,
+            )
+            and not get_bit(
+                board.occupancy[Color.BOTH.value],
+                Square.c1,
+            )
+            and not get_bit(
+                board.occupancy[Color.BOTH.value],
+                Square.b1,
+            )
+            and (board.castle & Castle.WQ)
+            and not (
                 is_square_attacked(
                     board,
                     Square.d1,
                     Color.BLACK,
                 )
                 or is_square_attacked(
-            board,
-            Square.c1,
-            Color.BLACK,
-        )
+                    board,
+                    Square.c1,
+                    Color.BLACK,
+                )
                 or is_square_attacked(
-            board,
-            Square.e1,
-            Color.BLACK,
-        )
-        )
+                    board,
+                    Square.e1,
+                    Color.BLACK,
+                )
+            )
         ):
             moves.add(
                 Move_maker(
@@ -759,36 +756,36 @@ def Move_generator(board: Board, only_capture=False):
         bitboardK = board.bitboard[Pieces.k.value]
         bitboardR = board.bitboard[Pieces.r.value]
         if (
-                get_bit(bitboardK, Square.e8)
-                and get_bit(bitboardR, Square.h8)
-                and not get_bit(
-            board.occupancy[Color.BOTH.value],
-            Square.f8,
-        )
-                and not get_bit(
-            board.occupancy[Color.BOTH.value],
-            Square.g8,
-        )
-                and (board.castle & Castle.BK)
-                and (
+            get_bit(bitboardK, Square.e8)
+            and get_bit(bitboardR, Square.h8)
+            and not get_bit(
+                board.occupancy[Color.BOTH.value],
+                Square.f8,
+            )
+            and not get_bit(
+                board.occupancy[Color.BOTH.value],
+                Square.g8,
+            )
+            and (board.castle & Castle.BK)
+            and (
                 not (
-                        is_square_attacked(
-                            board,
-                            Square.f8,
-                            Color.WHITE,
-                        )
-                        or is_square_attacked(
-                    board,
-                    Square.g8,
-                    Color.WHITE,
+                    is_square_attacked(
+                        board,
+                        Square.f8,
+                        Color.WHITE,
+                    )
+                    or is_square_attacked(
+                        board,
+                        Square.g8,
+                        Color.WHITE,
+                    )
+                    or is_square_attacked(
+                        board,
+                        Square.e8,
+                        Color.WHITE,
+                    )
                 )
-                        or is_square_attacked(
-                    board,
-                    Square.e8,
-                    Color.WHITE,
-                )
-                )
-        )
+            )
         ):
             moves.add(
                 Move_maker(
@@ -801,40 +798,40 @@ def Move_generator(board: Board, only_capture=False):
             )
 
         if (
-                get_bit(bitboardK, Square.e8)
-                and get_bit(bitboardR, Square.a8)
-                and not get_bit(
-            board.occupancy[Color.BOTH.value],
-            Square.d8,
-        )
-                and not get_bit(
-            board.occupancy[Color.BOTH.value],
-            Square.c8,
-        )
-                and not get_bit(
-            board.occupancy[Color.BOTH.value],
-            Square.b8,
-        )
-                and (board.castle & Castle.BQ)
-                and (
+            get_bit(bitboardK, Square.e8)
+            and get_bit(bitboardR, Square.a8)
+            and not get_bit(
+                board.occupancy[Color.BOTH.value],
+                Square.d8,
+            )
+            and not get_bit(
+                board.occupancy[Color.BOTH.value],
+                Square.c8,
+            )
+            and not get_bit(
+                board.occupancy[Color.BOTH.value],
+                Square.b8,
+            )
+            and (board.castle & Castle.BQ)
+            and (
                 not (
-                        is_square_attacked(
-                            board,
-                            Square.d8,
-                            Color.WHITE,
-                        )
-                        or is_square_attacked(
-                    board,
-                    Square.c8,
-                    Color.WHITE,
+                    is_square_attacked(
+                        board,
+                        Square.d8,
+                        Color.WHITE,
+                    )
+                    or is_square_attacked(
+                        board,
+                        Square.c8,
+                        Color.WHITE,
+                    )
+                    or is_square_attacked(
+                        board,
+                        Square.e8,
+                        Color.WHITE,
+                    )
                 )
-                        or is_square_attacked(
-                    board,
-                    Square.e8,
-                    Color.WHITE,
-                )
-                )
-        )
+            )
         ):
             moves.add(
                 Move_maker(
@@ -845,6 +842,302 @@ def Move_generator(board: Board, only_capture=False):
                     Pieces.NONE,
                 )
             )
+
+    return moves
+
+
+@njit()
+def Capture_generator(board: Board):
+    moves = MoveList()
+
+    if board.side == Color.WHITE:
+        bitboard = board.bitboard[Pieces.P.value]
+        while bitboard:
+            source_square = get_lsb1_index(bitboard)
+            attack_bitboard = get_pawn_attacks(source_square, Color.WHITE.value)
+
+            while attack_bitboard:
+                target_square = get_lsb1_index(attack_bitboard)
+
+                if get_bit(board.occupancy[Color.BLACK.value], target_square):
+                    capture_piece = Pieces.NONE
+                    for x in range(12):
+                        if get_bit(board.bitboard[x], target_square):
+                            capture_piece = x
+                            break
+
+                    if Square.a7 <= source_square <= Square.h7:
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.CAPTURE_PROMOTION_QUEEN,
+                                Pieces.P,
+                                capture_piece,
+                            )
+                        )
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.CAPTURE_PROMOTION_ROOK,
+                                Pieces.P,
+                                capture_piece,
+                            )
+                        )
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.CAPTURE_PROMOTION_BISHOP,
+                                Pieces.P,
+                                capture_piece,
+                            )
+                        )
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.CAPTURE_PROMOTION_KNIGHT,
+                                Pieces.P,
+                                capture_piece,
+                            )
+                        )
+                    else:
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.CAPTURE,
+                                Pieces.P,
+                                capture_piece,
+                            )
+                        )
+
+                if target_square == board.enpassant:
+                    if get_bit(board.occupancy[Color.BLACK.value], target_square + 8):
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.ENPASSANT,
+                                Pieces.P,
+                                Pieces.p,
+                            )
+                        )
+
+                attack_bitboard = pop_bit(attack_bitboard, target_square)
+            bitboard = pop_bit(bitboard, source_square)
+    else:
+        bitboard = board.bitboard[Pieces.p.value]
+        while bitboard:
+            source_square = get_lsb1_index(bitboard)
+            attack_bitboard = get_pawn_attacks(source_square, Color.BLACK.value)
+
+            while attack_bitboard:
+                target_square = get_lsb1_index(attack_bitboard)
+
+                if get_bit(board.occupancy[Color.WHITE.value], target_square):
+                    capture_piece = Pieces.NONE
+                    for x in range(12):
+                        if get_bit(board.bitboard[x], target_square):
+                            capture_piece = x
+                            break
+
+                    if Square.a2 <= source_square <= Square.h2:
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.CAPTURE_PROMOTION_QUEEN,
+                                Pieces.p,
+                                capture_piece,
+                            )
+                        )
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.CAPTURE_PROMOTION_ROOK,
+                                Pieces.p,
+                                capture_piece,
+                            )
+                        )
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.CAPTURE_PROMOTION_BISHOP,
+                                Pieces.p,
+                                capture_piece,
+                            )
+                        )
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.CAPTURE_PROMOTION_KNIGHT,
+                                Pieces.p,
+                                capture_piece,
+                            )
+                        )
+                    else:
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.CAPTURE,
+                                Pieces.p,
+                                capture_piece,
+                            )
+                        )
+
+                if target_square == board.enpassant:
+                    if get_bit(board.occupancy[Color.WHITE.value], target_square - 8):
+                        moves.add(
+                            Move_maker(
+                                source_square,
+                                target_square,
+                                Flag.ENPASSANT,
+                                Pieces.p,
+                                Pieces.P,
+                            )
+                        )
+
+                attack_bitboard = pop_bit(attack_bitboard, target_square)
+            bitboard = pop_bit(bitboard, source_square)
+
+    knight_piece = Pieces.N.value if board.side == Color.WHITE else Pieces.n.value
+    opp = Color.BLACK.value if board.side == Color.WHITE else Color.WHITE.value
+    bitboard = board.bitboard[knight_piece]
+    while bitboard:
+        source_square = get_lsb1_index(bitboard)
+        attack_bitboard = get_knight_attacks(source_square)
+        while attack_bitboard:
+            target_square = get_lsb1_index(attack_bitboard)
+            if get_bit(board.occupancy[opp], target_square):
+                capture_piece = Pieces.NONE
+                for x in range(12):
+                    if get_bit(board.bitboard[x], target_square):
+                        capture_piece = x
+                        break
+                moves.add(
+                    Move_maker(
+                        source_square,
+                        target_square,
+                        Flag.CAPTURE,
+                        knight_piece,
+                        capture_piece,
+                    )
+                )
+            attack_bitboard = pop_bit(attack_bitboard, target_square)
+        bitboard = pop_bit(bitboard, source_square)
+
+    bishop_piece = Pieces.B.value if board.side == Color.WHITE else Pieces.b.value
+    bitboard = board.bitboard[bishop_piece]
+    while bitboard:
+        source_square = get_lsb1_index(bitboard)
+        attack_bitboard = get_bishop_attacks(
+            source_square, board.occupancy[Color.BOTH.value]
+        )
+        while attack_bitboard:
+            target_square = get_lsb1_index(attack_bitboard)
+            if get_bit(board.occupancy[opp], target_square):
+                capture_piece = Pieces.NONE
+                for x in range(12):
+                    if get_bit(board.bitboard[x], target_square):
+                        capture_piece = x
+                        break
+                moves.add(
+                    Move_maker(
+                        source_square,
+                        target_square,
+                        Flag.CAPTURE,
+                        bishop_piece,
+                        capture_piece,
+                    )
+                )
+            attack_bitboard = pop_bit(attack_bitboard, target_square)
+        bitboard = pop_bit(bitboard, source_square)
+
+    rook_piece = Pieces.R.value if board.side == Color.WHITE else Pieces.r.value
+    bitboard = board.bitboard[rook_piece]
+    while bitboard:
+        source_square = get_lsb1_index(bitboard)
+        attack_bitboard = get_rook_attacks(
+            source_square, board.occupancy[Color.BOTH.value]
+        )
+        while attack_bitboard:
+            target_square = get_lsb1_index(attack_bitboard)
+            if get_bit(board.occupancy[opp], target_square):
+                capture_piece = Pieces.NONE
+                for x in range(12):
+                    if get_bit(board.bitboard[x], target_square):
+                        capture_piece = x
+                        break
+                moves.add(
+                    Move_maker(
+                        source_square,
+                        target_square,
+                        Flag.CAPTURE,
+                        rook_piece,
+                        capture_piece,
+                    )
+                )
+            attack_bitboard = pop_bit(attack_bitboard, target_square)
+        bitboard = pop_bit(bitboard, source_square)
+
+    queen_piece = Pieces.Q.value if board.side == Color.WHITE else Pieces.q.value
+    bitboard = board.bitboard[queen_piece]
+    while bitboard:
+        source_square = get_lsb1_index(bitboard)
+        attack_bitboard = get_queen_attacks(
+            source_square, board.occupancy[Color.BOTH.value]
+        )
+        while attack_bitboard:
+            target_square = get_lsb1_index(attack_bitboard)
+            if get_bit(board.occupancy[opp], target_square):
+                capture_piece = Pieces.NONE
+                for x in range(12):
+                    if get_bit(board.bitboard[x], target_square):
+                        capture_piece = x
+                        break
+                moves.add(
+                    Move_maker(
+                        source_square,
+                        target_square,
+                        Flag.CAPTURE,
+                        queen_piece,
+                        capture_piece,
+                    )
+                )
+            attack_bitboard = pop_bit(attack_bitboard, target_square)
+        bitboard = pop_bit(bitboard, source_square)
+
+    king_piece = Pieces.K.value if board.side == Color.WHITE else Pieces.k.value
+    bitboard = board.bitboard[king_piece]
+    while bitboard:
+        source_square = get_lsb1_index(bitboard)
+        attack_bitboard = get_king_attacks(source_square)
+        while attack_bitboard:
+            target_square = get_lsb1_index(attack_bitboard)
+            if get_bit(board.occupancy[opp], target_square):
+                capture_piece = Pieces.NONE
+                for x in range(12):
+                    if get_bit(board.bitboard[x], target_square):
+                        capture_piece = x
+                        break
+                moves.add(
+                    Move_maker(
+                        source_square,
+                        target_square,
+                        Flag.CAPTURE,
+                        king_piece,
+                        capture_piece,
+                    )
+                )
+            attack_bitboard = pop_bit(attack_bitboard, target_square)
+        bitboard = pop_bit(bitboard, source_square)
 
     return moves
 
@@ -1154,49 +1447,48 @@ def Move(board: Board, move):
     board.castle &= castle_shifter[source_square]
 
     board.occupancy[0] = (
-            board.bitboard[0]
-            | board.bitboard[1]
-            | board.bitboard[2]
-            | board.bitboard[3]
-            | board.bitboard[4]
-            | board.bitboard[5]
+        board.bitboard[0]
+        | board.bitboard[1]
+        | board.bitboard[2]
+        | board.bitboard[3]
+        | board.bitboard[4]
+        | board.bitboard[5]
     )
     board.occupancy[1] = (
-            board.bitboard[6]
-            | board.bitboard[7]
-            | board.bitboard[8]
-            | board.bitboard[9]
-            | board.bitboard[10]
-            | board.bitboard[11]
+        board.bitboard[6]
+        | board.bitboard[7]
+        | board.bitboard[8]
+        | board.bitboard[9]
+        | board.bitboard[10]
+        | board.bitboard[11]
     )
     board.occupancy[2] = board.occupancy[0] | board.occupancy[1]
     Wking = get_lsb1_index(board.bitboard[Pieces.K.value])
     Bking = get_lsb1_index(board.bitboard[Pieces.k.value])
     if (
-            is_square_attacked(board, Wking, Color.BLACK)
-            and board.side == Color.WHITE
-    ) or (
-            is_square_attacked(board, Bking, Color.WHITE)
-            and board.side == Color.BLACK
-    ):
-        unmove(
-            board,
-            move,
-            castle_cpy,
-            enpassant_cpy,
-        )
+        is_square_attacked(board, Wking, Color.BLACK) and board.side == Color.WHITE
+    ) or (is_square_attacked(board, Bking, Color.WHITE) and board.side == Color.BLACK):
+        unmove(board, move, castle_cpy, enpassant_cpy, board.halfmove)
         return False
     board.side = Color.WHITE if board.side == Color.BLACK else Color.BLACK
+
+    if (
+        piece == Pieces.P
+        or flag == Flag.CAPTURE_PROMOTION_ROOK
+        or flag == Flag.CAPTURE
+        or flag == Flag.CAPTURE_PROMOTION_QUEEN
+        or flag == Flag.CAPTURE_PROMOTION_KNIGHT
+        or flag == Flag.CAPTURE_PROMOTION_BISHOP
+        or flag == Flag.ENPASSANT
+    ):
+        board.halfmove = 0
+    else:
+        board.halfmove += 1
     return True
 
 
 @njit
-def unmove(
-        board,
-        move,
-        prev_castle,
-        prev_enpassant,
-):
+def unmove(board, move, prev_castle, prev_enpassant, ply):
     source_square = get_start_square(move)
     target_square = get_target_square(move)
     piece = get_starting_piece(move)
@@ -1446,6 +1738,7 @@ def unmove(
     board.occupancy[Color.WHITE.value] = occ_white
     board.occupancy[Color.BLACK.value] = occ_black
     board.occupancy[2] = occ_all
+    board.halfmove = ply
 
 
 @njit
@@ -1459,14 +1752,10 @@ def perft_divide(board, depth: int) -> int:
         for i in range(ml.counter):
             saved_castle = board.castle
             saved_enpassant = board.enpassant
+            saved_ply = board.halfmove
             if Move(board, ml.moves[i]):
                 cnt += 1
-                unmove(
-                    board,
-                    ml.moves[i],
-                    saved_castle,
-                    saved_enpassant,
-                )
+                unmove(board, ml.moves[i], saved_castle, saved_enpassant, saved_ply)
         return cnt
 
     MAX_STACK = 15000
@@ -1603,19 +1892,17 @@ def run_perft(fen: str, depth: int):
 
 
 def test_perft(
-        fen,
-        perft_results,
-        error_filename="errors.txt",
-        report_filename="report.txt",
+    fen,
+    perft_results,
+    error_filename="errors.txt",
+    report_filename="report.txt",
 ):
     for depth in tqdm.tqdm(sorted(perft_results.keys())):
         try:
             total = run_perft(fen, depth)
         except Exception as e:
             with open(error_filename, "a") as f:
-                f.write(
-                    f"fen : {fen} exception at depth : {depth}; exception: {e}\n"
-                )
+                f.write(f"fen : {fen} exception at depth : {depth}; exception: {e}\n")
             return depth
 
         try:
@@ -1634,6 +1921,7 @@ def test_perft(
                 )
             return depth
     return False
+
 
 # if __name__ == "__main__":
 # # FOR DEBUG
