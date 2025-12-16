@@ -16,6 +16,7 @@ from Move_gen_pieces import (
     get_rook_attacks,
 )
 from pregen.Utilities import get_bit, get_lsb1_index, pop_bit, set_bit
+from Zobrist import piece_keys,enpassant_keys,castle_keys,side_key
 
 specs = [
     ("moves", u32[:]),
@@ -1484,6 +1485,28 @@ def Move(board: Board, move):
         board.halfmove = 0
     else:
         board.halfmove += 1
+
+    board.hash ^= piece_keys[get_starting_piece(move),get_start_square(move)]
+    board.hash ^= piece_keys[get_starting_piece(move),get_target_square(move)]
+
+    if (flag == Flag.CAPTURE_PROMOTION_ROOK
+        or flag == Flag.CAPTURE
+        or flag == Flag.CAPTURE_PROMOTION_QUEEN
+        or flag == Flag.CAPTURE_PROMOTION_KNIGHT
+        or flag == Flag.CAPTURE_PROMOTION_BISHOP
+        or flag == Flag.ENPASSANT):
+        board.hash ^= piece_keys[get_capture_piece(move),get_target_square(move)]
+
+    if enpassant_cpy != 64:
+        board.hash ^= enpassant_keys[enpassant_cpy]
+
+    if board.enpassant != 64:
+        board.hash ^= enpassant_keys[board.enpassant]
+
+    board.hash ^= castle_keys[castle_cpy]
+    board.hash ^= castle_keys[board.castle]
+
+    board.hash ^= side_key
     return True
 
 

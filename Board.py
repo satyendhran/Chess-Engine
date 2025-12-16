@@ -2,12 +2,11 @@ from typing import Literal
 
 import numpy as np
 from numba import njit
-from numba.types import int64,int16 # type:ignore
-from numba.typed import Dict
 from numba.experimental import jitclass
 from numba.types import uint8 as u8  # type:ignore
 from numba.types import uint64 as u64  # type:ignore
-
+from Zobrist import piece_keys,enpassant_keys,castle_keys,side_key
+from pregen.Utilities import pop_bit,get_lsb1_index
 from Constants import Color, Pieces, piece_sym
 from Move_gen_pieces import (
     get_bishop_attacks,
@@ -25,6 +24,7 @@ specs = [
     ("castle", u8),
     ("enpassant", u8),
     ("halfmove", u8),
+    ("hash",u64)
 ]
 
 
@@ -117,6 +117,7 @@ class Board:
         self.castle = castle
         self.enpassant = enpassant
         self.halfmove = halfmove
+        # self.hash = genhash(self)
 
     def copy(self):
         return Board(
@@ -127,7 +128,22 @@ class Board:
             self.enpassant,
             self.halfmove,
         )
-spec = []
+
+    def zobrist(self):
+        self.hash = 0
+        for piece in range(12):
+            bitboard = self.bitboard[piece]
+            while bitboard:
+                square = get_lsb1_index(bitboard)
+                self.hash ^= piece_keys[piece, square]
+                bitboard = pop_bit(bitboard, square)
+        if self.enpassant != 64:
+            self.hash ^= enpassant_keys[self.enpassant]
+        self.hash ^= castle_keys[self.castle]
+        if self.side == 1:
+            self.hash ^= side_key
+
+
 @njit(u64(u64, u8))
 def get_bit(bitboard: int, square: int) -> int:
     return (bitboard >> square) & (1)

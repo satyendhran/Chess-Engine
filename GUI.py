@@ -5,7 +5,6 @@ import threading
 import time
 from collections.abc import Callable
 from enum import Enum
-from random import choice
 
 import pygame
 
@@ -20,9 +19,9 @@ from Board_Move_gen import (
     unmove,
 )
 from Constants import Color, Flag, Pieces
-from Minimax import minimax_max, minimax_min
-from Move_order import history, killers,pv_table,pv_length
+from Minimax import AI
 from pregen.Utilities import get_lsb1_index
+
 
 class FENS:
     QUEEN = b"3k4/3q4/8/8/8/8/8/3K4 w ---- 0 1"
@@ -34,7 +33,9 @@ class FENS:
     M1 = b"1q6/8/8/8/8/2k5/8/K7 w - - 0 1"
     STARTING = b"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
+
 FEN = FENS.STARTING
+
 
 class GameMode(Enum):
     MENU = 0
@@ -434,19 +435,7 @@ class ChessGUI:
     def _run_ai_logic(self):
         try:
             board_copy = self.board.copy()
-
-            # Use the selected depth
-            if board_copy.side == Color.BLACK:
-                for depth in range(1,self.ai_depth):
-                    move = minimax_min(
-                        board_copy, self.ai_depth, -10000000000000, 10000000000000, 1, killers, history
-                    )
-            else:
-                for depth in range(1,self.ai_depth):
-                    move = minimax_max(
-                        board_copy, self.ai_depth, -10000000000000, 10000000000000, 1, killers, history
-                    )
-
+            move = AI(board_copy, board_copy.side, self.ai_depth)
             self.ai_queue.put(move)
         except Exception as e:
             print(f"AI Error: {e}")
@@ -894,6 +883,11 @@ class ChessGUI:
                     self.handle_click(pos)
 
     def run(self):
+        import cProfile
+
+        profiler = cProfile.Profile()
+        profiler.enable()
+
         running = True
         new_game_rect = None
 
@@ -1009,8 +1003,13 @@ class ChessGUI:
             pygame.display.flip()
             self.clock.tick(60)
 
+        profiler.disable()
+        profiler.dump_stats("gui_loop.prof")
+
         pygame.quit()
         sys.exit()
+
+
 
 
 if __name__ == "__main__":

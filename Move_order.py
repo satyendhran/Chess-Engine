@@ -2,7 +2,6 @@ import numpy as np
 from numba import i4, njit, u4, u8
 
 from Board_Move_gen import (
-    MoveList,
     get_capture_piece,
     get_flag,
     get_starting_piece,
@@ -12,8 +11,8 @@ from Constants import Flag
 
 killers = np.zeros(shape=(2, 64), dtype=np.uint64)
 history = np.zeros((12, 64), dtype=np.uint32)
-pv_length = np.zeros(shape= 64, dtype=np.uint32)
-pv_table = np.zeros(shape= (64,64), dtype=np.uint32)
+pv_length = np.zeros(shape=64, dtype=np.uint32)
+pv_table = np.zeros(shape=(64, 64), dtype=np.uint32)
 
 mvv_lva = np.array(
     [
