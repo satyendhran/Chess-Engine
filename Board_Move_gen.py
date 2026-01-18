@@ -1474,6 +1474,7 @@ def Move(board: Board, move):
 
     if (
         piece == Pieces.P
+        or piece == Pieces.p
         or flag == Flag.CAPTURE_PROMOTION_ROOK
         or flag == Flag.CAPTURE
         or flag == Flag.CAPTURE_PROMOTION_QUEEN
@@ -1484,6 +1485,7 @@ def Move(board: Board, move):
         board.halfmove = 0
     else:
         board.halfmove += 1
+    board.zobrist()
     return True
 
 
@@ -1739,6 +1741,7 @@ def unmove(board, move, prev_castle, prev_enpassant, ply):
     board.occupancy[Color.BLACK.value] = occ_black
     board.occupancy[2] = occ_all
     board.halfmove = ply
+    board.zobrist()
 
 
 @njit

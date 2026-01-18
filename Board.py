@@ -5,8 +5,7 @@ from numba import njit
 from numba.experimental import jitclass
 from numba.types import uint8 as u8  # type:ignore
 from numba.types import uint64 as u64  # type:ignore
-from Zobrist import piece_keys,enpassant_keys,castle_keys,side_key
-from pregen.Utilities import pop_bit,get_lsb1_index
+
 from Constants import Color, Pieces, piece_sym
 from Move_gen_pieces import (
     get_bishop_attacks,
@@ -16,6 +15,8 @@ from Move_gen_pieces import (
     get_queen_attacks,
     get_rook_attacks,
 )
+from pregen.Utilities import get_lsb1_index, pop_bit
+from Zobrist import castle_keys, enpassant_keys, piece_keys, side_key
 
 specs = [
     ("bitboard", u64[:]),
@@ -24,8 +25,17 @@ specs = [
     ("castle", u8),
     ("enpassant", u8),
     ("halfmove", u8),
-    ("hash",u64)
+    ("hash", u64),
 ]
+
+
+@njit(inline="always")
+def piece_at(bitboards, sq):
+    mask = np.uint64(1) << sq
+    for piece in range(12):
+        if bitboards[piece] & mask:
+            return piece
+    return -1
 
 
 @njit
@@ -74,15 +84,16 @@ def parse_fen(fen: bytes):
             idx = piece_map[b - 66]
             pieces[idx] |= np.uint64(1) << sq
             sq = np.uint8(sq + np.uint8(1))
+
     castle = np.uint8(0)
-    if 75 == parts[2][0]:
-        castle = np.uint8(castle | 0b0001)
-    if 81 == parts[2][1]:
-        castle = np.uint8(castle | 0b0010)
-    if 107 == parts[2][2]:
-        castle = np.uint8(castle | 0b0100)
-    if 113 == parts[2][3]:
-        castle = np.uint8(castle | 0b1000)
+
+    for i in range(len(parts[2])):
+        c = parts[2][i]
+        castle |= np.uint8((c == ord("K")) << 0)
+        castle |= np.uint8((c == ord("Q")) << 1)
+        castle |= np.uint8((c == ord("k")) << 2)
+        castle |= np.uint8((c == ord("q")) << 3)
+
     occupancy = np.zeros(3, dtype=np.uint64)
     occupancy[0] = pieces[0] | pieces[1] | pieces[2] | pieces[3] | pieces[4] | pieces[5]
     occupancy[1] = (
@@ -117,7 +128,7 @@ class Board:
         self.castle = castle
         self.enpassant = enpassant
         self.halfmove = halfmove
-        # self.hash = genhash(self)
+        self.zobrist()
 
     def copy(self):
         return Board(

@@ -1,41 +1,65 @@
+import os
+
 import numpy as np
 from numba import njit
 from numba.types import uint8 as u8  # type:ignore
 from numba.types import uint64 as u64  # type:ignore
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 pawn_att = np.load(
-    "PAWN_ATTACKS.npy",
+    os.path.join(BASE_DIR, "PAWN_ATTACKS.npy"),
     allow_pickle=True,
 )
+
 knight_att = np.load(
-    "KNIGHT_ATTACKS.npy",
+    os.path.join(BASE_DIR, "KNIGHT_ATTACKS.npy"),
     allow_pickle=True,
 )
+
 king_att = np.load(
-    "KING_ATTACKS.npy",
+    os.path.join(BASE_DIR, "KING_ATTACKS.npy"),
     allow_pickle=True,
 )
 
 bishop_att = np.load(
-    "BISHOP_ATTACKS.npy",
+    os.path.join(BASE_DIR, "BISHOP_ATTACKS.npy"),
     allow_pickle=True,
 )
+
 rook_att = np.load(
-    "ROOK_ATTACKS.npy",
+    os.path.join(BASE_DIR, "ROOK_ATTACKS.npy"),
     allow_pickle=True,
 )
-bishop_mask = np.load("BISHOP_MASK.npy", allow_pickle=True)
-rook_mask = np.load("ROOK_MASK.npy", allow_pickle=True)
+
+bishop_mask = np.load(
+    os.path.join(BASE_DIR, "BISHOP_MASK.npy"),
+    allow_pickle=True,
+)
+
+rook_mask = np.load(
+    os.path.join(BASE_DIR, "ROOK_MASK.npy"),
+    allow_pickle=True,
+)
+
 bishop_shift = np.load(
-    "BISHOP_SHIFTS.npy",
+    os.path.join(BASE_DIR, "BISHOP_SHIFTS.npy"),
     allow_pickle=True,
 )
-rook_shift = np.load("ROOK_SHIFTS.npy", allow_pickle=True)
+
+rook_shift = np.load(
+    os.path.join(BASE_DIR, "ROOK_SHIFTS.npy"),
+    allow_pickle=True,
+)
+
 bishop_magic = np.load(
-    "BISHOP_MAGICS.npy",
+    os.path.join(BASE_DIR, "BISHOP_MAGICS.npy"),
     allow_pickle=True,
 )
-rook_magic = np.load("ROOK_MAGICS.npy", allow_pickle=True)
+
+rook_magic = np.load(
+    os.path.join(BASE_DIR, "ROOK_MAGICS.npy"),
+    allow_pickle=True,
+)
 
 
 @njit(u64(u8, u8), nogil=True)

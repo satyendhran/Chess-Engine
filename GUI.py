@@ -1,12 +1,14 @@
 import os
 import queue
+import random
 import sys
 import threading
 import time
-from collections.abc import Callable
 from enum import Enum
 
+import msgpack
 import pygame
+from IPython import embed
 
 from Board import Board, is_square_attacked, parse_fen
 from Board_Move_gen import (
@@ -22,19 +24,38 @@ from Constants import Color, Flag, Pieces
 from Minimax import AI
 from pregen.Utilities import get_lsb1_index
 
+# Load opening book
+try:
+    with open(r"Process Opening\opening_tree.msgpack", "rb") as f:
+        OPENING_TREE = msgpack.unpack(f, raw=False)
+    OPENING_BOOK_LOADED = True
+except:
+    OPENING_TREE = {}
+    OPENING_BOOK_LOADED = False
+
 
 class FENS:
-    QUEEN = b"3k4/3q4/8/8/8/8/8/3K4 w ---- 0 1"
-    DoubleRook = b"3r4/3r4/3k4/8/8/8/8/3K4 w ---- 0 1"
-    ROOK = b"3r4/3k4/8/8/8/8/8/3K4 w ---- 0 1"
-    DoubleBishop = b"3bb3/3k4/8/8/8/8/8/3K4 w ---- 0 1"
-    RookKnight = b"8/3k4/2bn4/8/8/8/8/3K4 w ---- 0 1"
-    DoublePawn = b"8/3k4/3pp3/8/8/8/8/3K4 w ---- 0 1"
-    M1 = b"1q6/8/8/8/8/2k5/8/K7 w - - 0 1"
-    STARTING = b"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    WKQ_VS_BK = b"6k1/8/8/8/8/8/6K1/6Q1 w - - 0 1"
+    BKQ_VS_WK = b"6q1/6k1/8/8/8/8/8/6K1 b - - 0 1"
+
+    WKR_VS_BK = b"6k1/8/8/8/8/8/6K1/6R1 w - - 0 1"
+    BKR_VS_WK = b"6r1/6k1/8/8/8/8/8/6K1 b - - 0 1"
+
+    WKRR_VS_BK = b"6k1/8/8/8/8/8/6K1/5RR1 w - - 0 1"
+    BKRR_VS_WK = b"5rr1/6k1/8/8/8/8/8/6K1 b - - 0 1"
+
+    WKQQ_VS_BK = b"6k1/8/8/8/8/8/6K1/5QQ1 w - - 0 1"
+    BKQQ_VS_WK = b"5qq1/6k1/8/8/8/8/8/6K1 b - - 0 1"
+
+    WKBB_VS_BK = b"6k1/8/8/8/8/8/6K1/5BB1 w - - 0 1"
+    BKBB_VS_WK = b"5bb1/6k1/8/8/8/8/8/6K1 b - - 0 1"
+
+    WKBN_VS_BK = b"6k1/8/8/8/8/8/6K1/5BN1 w - - 0 1"
+    BKBN_VS_WK = b"5bn1/6k1/8/8/8/8/8/6K1 b - - 0 1"
 
 
-FEN = FENS.STARTING
+STARTING_FEN = b"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+# STARTING_FEN = FENS.STARTIN
 
 
 class GameMode(Enum):
@@ -50,966 +71,815 @@ class GameState(Enum):
     DRAW = 3
 
 
-class PieceImageCache:
-    """Efficient piece image caching with fallback"""
+class OpeningNavigator:
+    """Navigates opening tree and provides book moves"""
 
-    def __init__(self, piece_size: int = 80):
-        self.piece_size = piece_size
-        self.cache: dict[str, pygame.Surface] = {}
-        self.piece_names = {
-            0: "pawn",
-            1: "knight",
-            2: "bishop",
-            3: "rook",
-            4: "queen",
-            5: "king",
-            6: "pawn",
-            7: "knight",
-            8: "bishop",
-            9: "rook",
-            10: "queen",
-            11: "king",
-        }
-        self.colors = {
-            0: "white",
-            1: "white",
-            2: "white",
-            3: "white",
-            4: "white",
-            5: "white",
-            6: "black",
-            7: "black",
-            8: "black",
-            9: "black",
-            10: "black",
-            11: "black",
-        }
+    def __init__(self, tree):
+        self.tree = tree
+        self.reset()
 
-    def get_piece(self, piece_idx: int) -> pygame.Surface:
-        color = self.colors[piece_idx]
-        piece = self.piece_names[piece_idx]
-        key = f"{color}_{piece}"
+    def reset(self):
+        self.current = self.tree
+        self.history = []
+        self.active = True
 
+    def apply(self, uci_move: str) -> bool:
+        """Apply move, return True if still in book"""
+        if not self.active:
+            return False
+
+        if uci_move in self.current:
+            self.current = self.current[uci_move]
+            self.history.append(uci_move)
+            return True
+        else:
+            self.active = False
+            return False
+
+    def get_options(self) -> list:
+        """Available book moves from current position"""
+        if not self.active or not isinstance(self.current, dict):
+            return []
+        return list(self.current.keys())
+
+    def select_random(self) -> str | None:
+        """Random book move for AI"""
+        opts = self.get_options()
+        return random.choice(opts) if opts else None
+
+
+class PieceCache:
+    """Piece image caching with fallback rendering"""
+
+    def __init__(self, size: int = 80):
+        self.size = size
+        self.cache = {}
+        self.names = ["pawn", "knight", "bishop", "rook", "queen", "king"] * 2
+        self.colors = ["white"] * 6 + ["black"] * 6
+
+    def get(self, idx: int) -> pygame.Surface:
+        key = f"{self.colors[idx]}_{self.names[idx]}"
         if key not in self.cache:
-            path = f"images/{color}_{piece}.png"
+            path = f"images/{key}.png"
             if os.path.exists(path):
                 try:
                     img = pygame.image.load(path)
-                    img = pygame.transform.smoothscale(
-                        img, (self.piece_size, self.piece_size)
+                    self.cache[key] = pygame.transform.smoothscale(
+                        img, (self.size, self.size)
                     )
-                    self.cache[key] = img
                 except:
-                    self.cache[key] = self._create_fallback(piece, color)
+                    self.cache[key] = self._fallback(self.names[idx], self.colors[idx])
             else:
-                self.cache[key] = self._create_fallback(piece, color)
-
+                self.cache[key] = self._fallback(self.names[idx], self.colors[idx])
         return self.cache[key]
 
-    def _create_fallback(self, name, color_name):
-        s = pygame.Surface((self.piece_size, self.piece_size), pygame.SRCALPHA)
-        try:
-            font = pygame.font.SysFont("Arial", int(self.piece_size / 2), bold=True)
-        except:
-            font = pygame.font.Font(None, int(self.piece_size / 2))
+    def _fallback(self, name, color):
+        s = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+        font = pygame.font.SysFont("Arial", self.size // 2, bold=True)
 
-        text_color = (255, 255, 255) if color_name == "white" else (0, 0, 0)
-        bg_color = (220, 220, 220) if color_name == "white" else (60, 60, 60)
-        stroke = (0, 0, 0) if color_name == "white" else (255, 255, 255)
+        fg = (255, 255, 255) if color == "white" else (0, 0, 0)
+        bg = (220, 220, 220) if color == "white" else (60, 60, 60)
+        border = (0, 0, 0) if color == "white" else (255, 255, 255)
 
+        pygame.draw.circle(s, bg, (self.size // 2, self.size // 2), self.size // 2 - 5)
         pygame.draw.circle(
-            s,
-            bg_color,
-            (self.piece_size // 2, self.piece_size // 2),
-            self.piece_size // 2 - 5,
-        )
-        pygame.draw.circle(
-            s,
-            stroke,
-            (self.piece_size // 2, self.piece_size // 2),
-            self.piece_size // 2 - 5,
-            2,
+            s, border, (self.size // 2, self.size // 2), self.size // 2 - 5, 2
         )
 
-        txt = font.render(name[0].upper(), True, text_color)
+        txt = font.render(name[0].upper(), True, fg)
         s.blit(
             txt,
             (
-                self.piece_size // 2 - txt.get_width() // 2,
-                self.piece_size // 2 - txt.get_height() // 2,
+                self.size // 2 - txt.get_width() // 2,
+                self.size // 2 - txt.get_height() // 2,
             ),
         )
         return s
 
 
 class Slider:
-    """Interactive slider widget"""
+    """Depth selection slider"""
 
-    def __init__(self, x, y, width, height, min_val, max_val, initial_val, label):
-        self.rect = pygame.Rect(x, y, width, height)
-        self.min_val = min_val
-        self.max_val = max_val
-        self.value = initial_val
+    def __init__(self, x, y, w, h, min_v, max_v, init, label):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.min, self.max, self.val = min_v, max_v, init
         self.label = label
-        self.dragging = False
-        self.handle_radius = height // 2 + 2
+        self.drag = False
+        self.radius = h // 2 + 2
 
-    def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            mx, my = event.pos
-            handle_x = (
+    def handle(self, ev):
+        if ev.type == pygame.MOUSEBUTTONDOWN:
+            mx, my = ev.pos
+            hx = (
                 self.rect.x
-                + ((self.value - self.min_val) / (self.max_val - self.min_val))
-                * self.rect.width
+                + ((self.val - self.min) / (self.max - self.min)) * self.rect.width
             )
-            if (
-                (mx - handle_x) ** 2 + (my - self.rect.centery) ** 2
-            ) <= self.handle_radius**2:
-                self.dragging = True
+            if ((mx - hx) ** 2 + (my - self.rect.centery) ** 2) <= self.radius**2:
+                self.drag = True
                 return True
-        elif event.type == pygame.MOUSEBUTTONUP:
-            self.dragging = False
-        elif event.type == pygame.MOUSEMOTION and self.dragging:
-            mx = event.pos[0]
-            ratio = max(0, min(1, (mx - self.rect.x) / self.rect.width))
-            self.value = int(self.min_val + ratio * (self.max_val - self.min_val))
+        elif ev.type == pygame.MOUSEBUTTONUP:
+            self.drag = False
+        elif ev.type == pygame.MOUSEMOTION and self.drag:
+            ratio = max(0, min(1, (ev.pos[0] - self.rect.x) / self.rect.width))
+            self.val = int(self.min + ratio * (self.max - self.min))
             return True
         return False
 
-    def draw(self, surface, fonts, colors):
-        # Track
-        track_rect = pygame.Rect(self.rect.x, self.rect.centery - 3, self.rect.width, 6)
-        pygame.draw.rect(surface, (60, 60, 60), track_rect, border_radius=3)
+    def draw(self, surf, fonts, cols):
+        track = pygame.Rect(self.rect.x, self.rect.centery - 3, self.rect.width, 6)
+        pygame.draw.rect(surf, (60, 60, 60), track, border_radius=3)
 
-        # Filled portion
-        fill_width = (
-            (self.value - self.min_val) / (self.max_val - self.min_val)
-        ) * self.rect.width
-        fill_rect = pygame.Rect(self.rect.x, self.rect.centery - 3, fill_width, 6)
-        pygame.draw.rect(surface, colors["accent"], fill_rect, border_radius=3)
+        fill_w = ((self.val - self.min) / (self.max - self.min)) * self.rect.width
+        fill = pygame.Rect(self.rect.x, self.rect.centery - 3, fill_w, 6)
+        pygame.draw.rect(surf, cols["accent"], fill, border_radius=3)
 
-        # Handle
-        handle_x = self.rect.x + fill_width
+        hx = self.rect.x + fill_w
+        pygame.draw.circle(surf, (40, 40, 40), (hx, self.rect.centery + 2), self.radius)
         pygame.draw.circle(
-            surface, (40, 40, 40), (handle_x, self.rect.centery + 2), self.handle_radius
-        )
-        pygame.draw.circle(
-            surface,
-            colors["accent"] if self.dragging else (200, 200, 200),
-            (handle_x, self.rect.centery),
-            self.handle_radius,
+            surf,
+            cols["accent"] if self.drag else (200, 200, 200),
+            (hx, self.rect.centery),
+            self.radius,
         )
 
-        # Label
-        label_text = fonts["small"].render(
-            f"{self.label}: {self.value}", True, colors["text"]
-        )
-        surface.blit(label_text, (self.rect.x, self.rect.y - 25))
+        lbl = fonts["small"].render(f"{self.label}: {self.val}", True, cols["text"])
+        surf.blit(lbl, (self.rect.x, self.rect.y - 25))
 
 
 class ChessGUI:
-    COLORS = {
+    C = {
         "light_sq": (240, 217, 181),
         "dark_sq": (181, 136, 99),
-        "bg": (28, 28, 32),
-        "panel": (38, 38, 42),
-        "panel_dark": (28, 28, 32),
-        "highlight": (255, 255, 0, 100),
+        "bg": (18, 18, 22),
+        "panel": (28, 28, 34),
+        "panel_dark": (18, 18, 22),
         "selected": (130, 151, 105, 200),
         "last_move": (205, 210, 106, 140),
         "text": (240, 240, 245),
-        "text_muted": (160, 160, 170),
-        "btn_default": (55, 55, 60),
-        "btn_hover": (75, 75, 80),
-        "accent": (100, 181, 246),
-        "accent_hover": (120, 201, 255),
+        "text_muted": (155, 155, 165),
+        "btn": (40, 40, 48),
+        "btn_hover": (55, 55, 63),
+        "accent": (76, 158, 255),
+        "accent_hover": (96, 178, 255),
         "overlay": (0, 0, 0, 200),
-        "white_piece": (255, 255, 255),
-        "black_piece": (50, 50, 50),
-        "check_red": (220, 70, 70, 180),
+        "check": (220, 70, 70, 180),
+        "book": (76, 175, 80),
+        "engine": (255, 152, 0),
     }
 
-    def __init__(
-        self, width: int = 1400, height: int = 900, ai_func: Callable | None = None
-    ):
+    def __init__(self, w=1600, h=1000):
         pygame.init()
-        self.display = pygame.display.set_mode(
-            (width, height), pygame.HWSURFACE | pygame.DOUBLEBUF
-        )
-        pygame.display.set_caption("Chess Engine - Advanced")
+        self.disp = pygame.display.set_mode((w, h), pygame.HWSURFACE | pygame.DOUBLEBUF)
+        pygame.display.set_caption("Chess Engine")
 
-        self.width = width
-        self.height = height
+        self.w, self.h = w, h
         self.clock = pygame.time.Clock()
 
         self.fonts = {
             "header": pygame.font.SysFont("Segoe UI", 72, bold=True),
-            "subheader": pygame.font.SysFont("Segoe UI", 48, bold=True),
+            "subhead": pygame.font.SysFont("Segoe UI", 48, bold=True),
             "title": pygame.font.SysFont("Segoe UI", 32, bold=True),
             "normal": pygame.font.SysFont("Segoe UI", 22),
             "small": pygame.font.SysFont("Segoe UI", 16),
             "tiny": pygame.font.SysFont("Segoe UI", 14),
-            "coords": pygame.font.SysFont("Segoe UI", 13, bold=True),
+            "coord": pygame.font.SysFont("Segoe UI", 13, bold=True),
         }
 
-        self.board_size = min(height - 60, width - 400)
-        self.square_size = self.board_size // 8
-        self.offset_x = 40
-        self.offset_y = (height - self.board_size) // 2
+        self.bsize = min(h - 80, w - 450)
+        self.sqsize = self.bsize // 8
+        self.offx, self.offy = 50, (h - self.bsize) // 2
 
-        self.piece_cache = PieceImageCache(self.square_size)
-        self.ai_func = ai_func
+        self.pieces = PieceCache(self.sqsize)
+        self.openings = OpeningNavigator(OPENING_TREE)
 
-        self.ai_queue = queue.Queue()
-        self.thinking = False
-        self.ai_start_time = 0
+        self.aiqueue = queue.Queue()
+        self.thinking, self.aistart = False, 0
 
         self.mode = GameMode.MENU
-        self.board = None
-        self.selected = None
-        self.valid_moves = []
-        self.move_log = []
-        self.history_states = []
-        self.last_move = None
+        self.board, self.sel, self.valids = None, None, []
+        self.log, self.states, self.lastmv = [], [], None
+        self.gstate, self.winner, self.reason = GameState.PLAYING, "", ""
 
-        self.game_state = GameState.PLAYING
-        self.winner_text = ""
-        self.end_reason = ""
+        self.pcolor, self.depth, self.flipped = Color.WHITE, 5, False
+        self.mcolor, self.slider = Color.WHITE, None
 
-        # New features
-        self.player_color = Color.WHITE  # Player's chosen color
-        self.ai_depth = 5  # AI search depth
-        self.board_flipped = False  # Whether board is flipped
+        self._warmup()
 
-        # Menu state
-        self.menu_selected_color = Color.WHITE
-        self.depth_slider = None
+    def check_repetition(self):
+        """Check for threefold repetition draw"""
+        if len(self.log) < 8:  # Need at least 8 moves for repetition
+            return False
 
-        self.warmup_engine()
+        current_hash = self.board.hash
+        repetitions = 1  # Count current position
 
-    def warmup_engine(self):
-        """Forces Numba compilation"""
-        self.display.fill(self.COLORS["bg"])
+        # Count how many times current position occurred in game history
+        for state in self.states:
+            if state["board"].hash == current_hash:
+                repetitions += 1
+                if repetitions >= 3:
+                    return True
 
-        # Fancy loading animation
+        return False
+
+    def _warmup(self):
+        """JIT compilation warmup"""
+        self.disp.fill(self.C["bg"])
         for i in range(3):
-            self.display.fill(self.COLORS["bg"])
-            dots = "." * (i + 1)
-            text = self.fonts["title"].render(
-                f"Initializing Engine{dots}", True, self.COLORS["accent"]
+            self.disp.fill(self.C["bg"])
+            t = self.fonts["title"].render(
+                f"Initializing{'.' * (i + 1)}", True, self.C["accent"]
             )
-            self.display.blit(
-                text, (self.width // 2 - text.get_width() // 2, self.height // 2)
-            )
+            self.disp.blit(t, (self.w // 2 - t.get_width() // 2, self.h // 2))
             pygame.display.flip()
             time.sleep(0.2)
 
-        pieces, occ, side, castle, ep, ply = parse_fen(FEN)
-        dummy_board = Board(pieces, occ, side, castle, ep, ply)
-        Move_generator(dummy_board)
-        is_square_attacked(dummy_board, 0, 0)
+        p, o, s, c, e, pl = parse_fen(STARTING_FEN)
+        b = Board(p, o, s, c, e, pl)
+        Move_generator(b)
+        is_square_attacked(b, 0, 0)
+        AI(b, s, 5)
 
-        self.display.fill(self.COLORS["bg"])
-        text = self.fonts["title"].render("Ready!", True, self.COLORS["accent"])
-        self.display.blit(
-            text, (self.width // 2 - text.get_width() // 2, self.height // 2)
-        )
+        self.disp.fill(self.C["bg"])
+        msg = "Opening Book Loaded!" if OPENING_BOOK_LOADED else "Ready (No Book)"
+        col = self.C["accent"] if OPENING_BOOK_LOADED else self.C["text_muted"]
+        t = self.fonts["title"].render(msg, True, col)
+        self.disp.blit(t, (self.w // 2 - t.get_width() // 2, self.h // 2))
         pygame.display.flip()
-        time.sleep(0.3)
+        time.sleep(0.4)
 
-    def pixel_to_square(self, x: int, y: int) -> int | None:
-        x -= self.offset_x
-        y -= self.offset_y
-        if 0 <= x < self.board_size and 0 <= y < self.board_size:
-            file = x // self.square_size
-            rank = y // self.square_size
-
-            if self.board_flipped:
-                rank = 7 - rank
-                file = 7 - file
-
-            return rank * 8 + file
+    def px2sq(self, x, y):
+        x, y = x - self.offx, y - self.offy
+        if 0 <= x < self.bsize and 0 <= y < self.bsize:
+            f, r = x // self.sqsize, y // self.sqsize
+            if self.flipped:
+                r, f = 7 - r, 7 - f
+            return r * 8 + f
         return None
 
-    def square_to_pixel(self, square: int) -> tuple[int, int]:
-        rank, file = divmod(square, 8)
-
-        if self.board_flipped:
-            rank = 7 - rank
-            file = 7 - file
-
+    def sq2px(self, sq):
+        r, f = divmod(sq, 8)
+        if self.flipped:
+            r, f = 7 - r, 7 - f
         return (
-            self.offset_x + file * self.square_size + self.square_size // 2,
-            self.offset_y + rank * self.square_size + self.square_size // 2,
+            self.offx + f * self.sqsize + self.sqsize // 2,
+            self.offy + r * self.sqsize + self.sqsize // 2,
         )
 
-    def get_legal_moves_for_square(self, square: int) -> list:
-        moves = Move_generator(self.board)
-        prev_c, prev_ep, prev_ply = (
-            self.board.castle,
-            self.board.enpassant,
-            self.board.halfmove,
-        )
-        legal_moves = []
-        for i in range(moves.counter):
-            m = moves.moves[i]
-            if get_start_square(m) == square:
+    def legal_for(self, sq):
+        mvs = Move_generator(self.board)
+        pc, pe, pp = self.board.castle, self.board.enpassant, self.board.halfmove
+        legal = []
+        for i in range(mvs.counter):
+            m = mvs.moves[i]
+            if get_start_square(m) == sq:
                 if Move(self.board, m):
-                    unmove(self.board, m, prev_c, prev_ep, prev_ply)
-                    legal_moves.append(m)
-        return legal_moves
+                    unmove(self.board, m, pc, pe, pp)
+                    legal.append(m)
+        return legal
 
-    def check_game_over(self):
-        moves = Move_generator(self.board)
-        prev_c, prev_ep, prev_ply = (
-            self.board.castle,
-            self.board.enpassant,
-            self.board.halfmove,
-        )
-        has_legal_move = False
+    def check_end(self):
+        mvs = Move_generator(self.board)
+        pc, pe, pp = self.board.castle, self.board.enpassant, self.board.halfmove
+        has_legal = False
 
-        for i in range(moves.counter):
-            m = moves.moves[i]
-            if Move(self.board, m):
-                has_legal_move = True
-                unmove(self.board, m, prev_c, prev_ep, prev_ply)
+        for i in range(mvs.counter):
+            if Move(self.board, mvs.moves[i]):
+                has_legal = True
+                unmove(self.board, mvs.moves[i], pc, pe, pp)
                 break
 
-        if not has_legal_move:
-            king_piece = (
-                Pieces.K.value if self.board.side == Color.WHITE else Pieces.k.value
-            )
-            king_sq = get_lsb1_index(self.board.bitboard[king_piece])
-            attacker = Color.BLACK if self.board.side == Color.WHITE else Color.WHITE
+        if not has_legal:
+            kp = Pieces.K.value if self.board.side == Color.WHITE else Pieces.k.value
+            ksq = get_lsb1_index(self.board.bitboard[kp])
+            att = Color.BLACK if self.board.side == Color.WHITE else Color.WHITE
 
-            if is_square_attacked(self.board, king_sq, attacker):
-                self.game_state = GameState.CHECKMATE
-                winner = "White" if self.board.side == Color.BLACK else "Black"
-                self.winner_text = f"{winner} Wins!"
-                self.end_reason = "Checkmate"
-            elif self.board.halfmove == 50:
-                self.game_state = GameState.DRAW
+            if is_square_attacked(self.board, ksq, att):
+                self.gstate = GameState.CHECKMATE
+                self.winner = (
+                    "White Wins!" if self.board.side == Color.BLACK else "Black Wins!"
+                )
+                self.reason = "Checkmate"
+            elif self.board.halfmove >= 50:
+                self.gstate, self.winner, self.reason = (
+                    GameState.DRAW,
+                    "Draw",
+                    "50-Move Rule",
+                )
             else:
-                self.game_state = GameState.STALEMATE
-                self.winner_text = "Draw"
-                self.end_reason = "Stalemate"
+                self.gstate, self.winner, self.reason = (
+                    GameState.STALEMATE,
+                    "Draw",
+                    "Stalemate",
+                )
 
-    def push_move(self, move):
-        self.history_states.append(
+    def push(self, mv):
+        self.states.append(
             {
                 "board": self.board.copy(),
-                "last_move": self.last_move,
-                "log": self.move_log[:],
-                "state": self.game_state,
+                "lastmv": self.lastmv,
+                "log": self.log[:],
+                "gstate": self.gstate,
+                "opnav": self._copy_opnav(),
             }
         )
 
-        if Move(self.board, move):
-            self.last_move = (get_start_square(move), get_target_square(move))
-            self.move_log.append(move_to_uci(move))
-            self.selected = None
-            self.valid_moves = []
-            self.check_game_over()
+        if Move(self.board, mv):
+            uci = move_to_uci(mv)
+            self.lastmv = (get_start_square(mv), get_target_square(mv))
+            self.log.append(uci)
+            self.openings.apply(uci)
+            self.sel, self.valids = None, []
+            self.check_end()
             return True
         return False
 
-    def undo_move(self):
-        if not self.history_states:
-            return
-        state = self.history_states.pop()
-        self.board = state["board"]
-        self.last_move = state["last_move"]
-        self.move_log = state["log"]
-        self.game_state = state.get("state", GameState.PLAYING)
-        self.selected = None
-        self.valid_moves = []
-        self.thinking = False
+    def _copy_opnav(self):
+        nav = OpeningNavigator(OPENING_TREE)
+        nav.current, nav.history, nav.active = (
+            self.openings.current,
+            self.openings.history[:],
+            self.openings.active,
+        )
+        return nav
 
-    def start_ai_turn(self):
-        if self.thinking or self.game_state != GameState.PLAYING:
+    def undo(self):
+        if not self.states:
             return
-        self.thinking = True
-        self.ai_start_time = time.time()
-        threading.Thread(target=self._run_ai_logic, daemon=True).start()
+        st = self.states.pop()
+        self.board, self.lastmv, self.log = st["board"], st["lastmv"], st["log"]
+        self.gstate, self.openings = st["gstate"], st["opnav"]
+        self.sel, self.valids, self.thinking = None, [], False
 
-    def _run_ai_logic(self):
+    def start_ai(self):
+        if self.thinking or self.gstate != GameState.PLAYING:
+            return
+        self.thinking, self.aistart = True, time.time()
+        threading.Thread(target=self._ai_logic, daemon=True).start()
+
+    def _ai_logic(self):
         try:
-            board_copy = self.board.copy()
-            move = AI(board_copy, board_copy.side, self.ai_depth)
-            self.ai_queue.put(move)
+            book_uci = self.openings.select_random() if self.openings.active else None
+
+            if book_uci:
+                mvs = Move_generator(self.board)
+                pc, pe, pp = (
+                    self.board.castle,
+                    self.board.enpassant,
+                    self.board.halfmove,
+                )
+                for i in range(mvs.counter):
+                    m = mvs.moves[i]
+                    if move_to_uci(m) == book_uci:
+                        if Move(self.board, m):
+                            unmove(self.board, m, pc, pe, pp)
+                            self.aiqueue.put(("book", m))
+                            return
+                        unmove(self.board, m, pc, pe, pp)
+
+            bc = self.board.copy()
+            mv = AI(bc, bc.side, self.depth)
+            self.aiqueue.put(("engine", mv))
         except Exception as e:
-            print(f"AI Error: {e}")
-            self.ai_queue.put(None)
+            print(f"AI error: {e}")
+            self.aiqueue.put(("error", None))
 
     def draw_board(self):
         for r in range(8):
             for f in range(8):
-                # Determine actual square based on flip
-                actual_r = (7 - r) if self.board_flipped else r
-                actual_f = (7 - f) if self.board_flipped else f
+                ar, af = (7 - r, 7 - f) if self.flipped else (r, f)
+                col = self.C["light_sq"] if (ar + af) % 2 == 0 else self.C["dark_sq"]
+                x, y = self.offx + f * self.sqsize, self.offy + r * self.sqsize
+                pygame.draw.rect(self.disp, col, (x, y, self.sqsize, self.sqsize))
 
-                color = (
-                    self.COLORS["light_sq"]
-                    if (actual_r + actual_f) % 2 == 0
-                    else self.COLORS["dark_sq"]
+                ccol = (
+                    self.C["dark_sq"]
+                    if col == self.C["light_sq"]
+                    else self.C["light_sq"]
                 )
-                x = self.offset_x + f * self.square_size
-                y = self.offset_y + r * self.square_size
-                pygame.draw.rect(
-                    self.display, color, (x, y, self.square_size, self.square_size)
-                )
-
-                # Coordinates
-                coord_color = (
-                    self.COLORS["dark_sq"]
-                    if color == self.COLORS["light_sq"]
-                    else self.COLORS["light_sq"]
-                )
-
                 if f == 0:
-                    rank_num = 8 - actual_r
-                    t = self.fonts["coords"].render(str(rank_num), True, coord_color)
-                    self.display.blit(t, (x + 4, y + 4))
-
+                    t = self.fonts["coord"].render(str(8 - ar), True, ccol)
+                    self.disp.blit(t, (x + 4, y + 4))
                 if r == 7:
-                    file_letter = chr(97 + actual_f)
-                    t = self.fonts["coords"].render(file_letter, True, coord_color)
-                    self.display.blit(
-                        t, (x + self.square_size - 14, y + self.square_size - 18)
-                    )
+                    t = self.fonts["coord"].render(chr(97 + af), True, ccol)
+                    self.disp.blit(t, (x + self.sqsize - 14, y + self.sqsize - 18))
 
-        # Highlight last move
-        if self.last_move:
-            s = pygame.Surface((self.square_size, self.square_size), pygame.SRCALPHA)
-            s.fill(self.COLORS["last_move"])
-            for sq in self.last_move:
-                rank, file = divmod(sq, 8)
-                if self.board_flipped:
-                    rank = 7 - rank
-                    file = 7 - file
-                self.display.blit(
-                    s,
-                    (
-                        self.offset_x + file * self.square_size,
-                        self.offset_y + rank * self.square_size,
-                    ),
+        if self.lastmv:
+            s = pygame.Surface((self.sqsize, self.sqsize), pygame.SRCALPHA)
+            s.fill(self.C["last_move"])
+            for sq in self.lastmv:
+                r, f = divmod(sq, 8)
+                if self.flipped:
+                    r, f = 7 - r, 7 - f
+                self.disp.blit(
+                    s, (self.offx + f * self.sqsize, self.offy + r * self.sqsize)
                 )
 
-        # Highlight selected square
-        if self.selected is not None:
-            rank, file = divmod(self.selected, 8)
-            if self.board_flipped:
-                rank = 7 - rank
-                file = 7 - file
-            s = pygame.Surface((self.square_size, self.square_size), pygame.SRCALPHA)
-            s.fill(self.COLORS["selected"])
-            self.display.blit(
-                s,
-                (
-                    self.offset_x + file * self.square_size,
-                    self.offset_y + rank * self.square_size,
-                ),
+        if self.sel is not None:
+            r, f = divmod(self.sel, 8)
+            if self.flipped:
+                r, f = 7 - r, 7 - f
+            s = pygame.Surface((self.sqsize, self.sqsize), pygame.SRCALPHA)
+            s.fill(self.C["selected"])
+            self.disp.blit(
+                s, (self.offx + f * self.sqsize, self.offy + r * self.sqsize)
             )
 
-        # Draw move indicators
-        for move in self.valid_moves:
-            target = get_target_square(move)
-            rank, file = divmod(target, 8)
-            if self.board_flipped:
-                rank = 7 - rank
-                file = 7 - file
-
-            is_capture = any((self.board.bitboard[i] >> target) & 1 for i in range(12))
-
-            s = pygame.Surface((self.square_size, self.square_size), pygame.SRCALPHA)
-            if is_capture:
+        for mv in self.valids:
+            tgt = get_target_square(mv)
+            r, f = divmod(tgt, 8)
+            if self.flipped:
+                r, f = 7 - r, 7 - f
+            cap = any((self.board.bitboard[i] >> tgt) & 1 for i in range(12))
+            s = pygame.Surface((self.sqsize, self.sqsize), pygame.SRCALPHA)
+            if cap:
                 pygame.draw.circle(
                     s,
                     (90, 90, 90, 120),
-                    (self.square_size // 2, self.square_size // 2),
-                    self.square_size // 2 - 4,
+                    (self.sqsize // 2, self.sqsize // 2),
+                    self.sqsize // 2 - 4,
                     5,
                 )
             else:
                 pygame.draw.circle(
                     s,
                     (70, 70, 70, 120),
-                    (self.square_size // 2, self.square_size // 2),
-                    self.square_size // 6,
+                    (self.sqsize // 2, self.sqsize // 2),
+                    self.sqsize // 6,
                 )
-
-            self.display.blit(
-                s,
-                (
-                    self.offset_x + file * self.square_size,
-                    self.offset_y + rank * self.square_size,
-                ),
+            self.disp.blit(
+                s, (self.offx + f * self.sqsize, self.offy + r * self.sqsize)
             )
 
     def draw_pieces(self):
-        for idx in range(12):
-            bb = self.board.bitboard[idx]
-            square = 0
+        for i in range(12):
+            bb, sq = self.board.bitboard[i], 0
             while bb:
                 if bb & 1:
-                    x, y = self.square_to_pixel(square)
-                    img = self.piece_cache.get_piece(idx)
-                    rect = img.get_rect(center=(x, y))
-                    self.display.blit(img, rect)
-                bb >>= 1
-                square += 1
+                    x, y = self.sq2px(sq)
+                    img = self.pieces.get(i)
+                    self.disp.blit(img, img.get_rect(center=(x, y)))
+                bb, sq = bb >> 1, sq + 1
 
     def draw_panel(self):
-        panel_x = self.offset_x + self.board_size + 25
-        panel_w = self.width - panel_x - 30
-
-        # Main panel background
+        px = self.offx + self.bsize + 30
+        pw = self.w - px - 40
         pygame.draw.rect(
-            self.display,
-            self.COLORS["panel"],
-            (panel_x, self.offset_y, panel_w, self.board_size),
-            border_radius=12,
+            self.disp,
+            self.C["panel"],
+            (px, self.offy, pw, self.bsize),
+            border_radius=16,
         )
 
-        y_cursor = self.offset_y + 20
+        y = self.offy + 25
 
-        # Game status section
-        if self.game_state == GameState.PLAYING:
-            turn_str = (
+        if self.gstate == GameState.PLAYING:
+            turn = (
                 "White to Move" if self.board.side == Color.WHITE else "Black to Move"
             )
             if self.thinking:
-                elapsed = time.time() - self.ai_start_time
-                turn_str = f"AI Thinking... ({elapsed:.1f}s)"
-            col = self.COLORS["accent"] if self.thinking else self.COLORS["text"]
-        else:
-            turn_str = "Game Over"
-            col = (220, 100, 100)
-
-        txt = self.fonts["title"].render(turn_str, True, col)
-        self.display.blit(txt, (panel_x + 20, y_cursor))
-        y_cursor += 50
-
-        # Divider
-        pygame.draw.line(
-            self.display,
-            (70, 70, 70),
-            (panel_x + 15, y_cursor),
-            (panel_x + panel_w - 15, y_cursor),
-            2,
-        )
-        y_cursor += 15
-
-        # Game info section
-        if self.mode == GameMode.AI:
-            mode_text = f"Mode: Player ({self.get_color_name(self.player_color)}) vs AI"
-            depth_text = f"AI Depth: {self.ai_depth}"
-        else:
-            mode_text = "Mode: Player vs Player"
-            depth_text = ""
-
-        info1 = self.fonts["small"].render(mode_text, True, self.COLORS["text_muted"])
-        self.display.blit(info1, (panel_x + 20, y_cursor))
-        y_cursor += 25
-
-        if depth_text:
-            info2 = self.fonts["small"].render(
-                depth_text, True, self.COLORS["text_muted"]
-            )
-            self.display.blit(info2, (panel_x + 20, y_cursor))
-            y_cursor += 25
-
-        moves_text = self.fonts["small"].render(
-            f"Moves: {len(self.move_log)}", True, self.COLORS["text_muted"]
-        )
-        self.display.blit(moves_text, (panel_x + 20, y_cursor))
-        y_cursor += 35
-
-        # Move history section
-        pygame.draw.line(
-            self.display,
-            (70, 70, 70),
-            (panel_x + 15, y_cursor),
-            (panel_x + panel_w - 15, y_cursor),
-            2,
-        )
-        y_cursor += 15
-
-        hist_title = self.fonts["normal"].render(
-            "Move History", True, self.COLORS["text"]
-        )
-        self.display.blit(hist_title, (panel_x + 20, y_cursor))
-        y_cursor += 35
-
-        # Display moves in two columns
-        history_start = max(0, len(self.move_log) - 24)
-        moves_to_show = self.move_log[history_start:]
-
-        col1_x = panel_x + 20
-        col2_x = panel_x + panel_w // 2 + 10
-
-        for i, m in enumerate(moves_to_show):
-            num = history_start + i + 1
-            x_pos = col1_x if i % 2 == 0 else col2_x
-
-            if i % 2 == 0:
-                row_color = self.COLORS["text"]
+                turn = f"AI Thinking... ({time.time() - self.aistart:.1f}s)"
+                col = self.C["accent"]
             else:
-                row_color = self.COLORS["text_muted"]
+                col = self.C["text"]
 
-            t = self.fonts["tiny"].render(f"{num}. {m}", True, row_color)
-            self.display.blit(t, (x_pos, y_cursor))
+            if OPENING_BOOK_LOADED:
+                badge = pygame.Surface((125, 30), pygame.SRCALPHA)
+                if self.openings.active:
+                    pygame.draw.rect(
+                        badge, (*self.C["book"], 200), (0, 0, 125, 30), border_radius=15
+                    )
+                    bt = self.fonts["tiny"].render("IN BOOK", True, (255, 255, 255))
+                else:
+                    pygame.draw.rect(
+                        badge,
+                        (*self.C["engine"], 200),
+                        (0, 0, 125, 30),
+                        border_radius=15,
+                    )
+                    bt = self.fonts["tiny"].render("ENGINE", True, (255, 255, 255))
+                badge.blit(bt, (12, 7))
+                self.disp.blit(badge, (px + pw - 140, y + 5))
+        else:
+            turn, col = "Game Over", (220, 100, 100)
 
+        t = self.fonts["title"].render(turn, True, col)
+        self.disp.blit(t, (px + 25, y))
+        y += 60
+
+        pygame.draw.line(self.disp, (60, 60, 65), (px + 20, y), (px + pw - 20, y), 2)
+        y += 20
+
+        mode_txt = (
+            f"Mode: {self._cname(self.pcolor)} vs AI"
+            if self.mode == GameMode.AI
+            else "Mode: PvP"
+        )
+        t = self.fonts["small"].render(mode_txt, True, self.C["text_muted"])
+        self.disp.blit(t, (px + 25, y))
+        y += 28
+
+        if self.mode == GameMode.AI:
+            t = self.fonts["small"].render(
+                f"AI Depth: {self.depth}", True, self.C["text_muted"]
+            )
+            self.disp.blit(t, (px + 25, y))
+            y += 28
+
+        t = self.fonts["small"].render(
+            f"Moves: {len(self.log)}", True, self.C["text_muted"]
+        )
+        self.disp.blit(t, (px + 25, y))
+        y += 40
+
+        pygame.draw.line(self.disp, (60, 60, 65), (px + 20, y), (px + pw - 20, y), 2)
+        y += 20
+
+        t = self.fonts["normal"].render("Move History", True, self.C["text"])
+        self.disp.blit(t, (px + 25, y))
+        y += 40
+
+        start = max(0, len(self.log) - 26)
+        for i, m in enumerate(self.log[start:]):
+            col = self.C["text"] if i % 2 == 0 else self.C["text_muted"]
+            xp = px + 25 if i % 2 == 0 else px + pw // 2 + 15
+            t = self.fonts["tiny"].render(f"{start + i + 1}. {m}", True, col)
+            self.disp.blit(t, (xp, y))
             if i % 2 == 1:
-                y_cursor += 22
+                y += 24
 
-        # Control buttons at bottom
         mx, my = pygame.mouse.get_pos()
-        btn_y = self.offset_y + self.board_size - 190
-        btn_w = panel_w - 40
+        by = self.offy + self.bsize - 200
+        flip_r = pygame.Rect(px + 25, by, pw - 50, 48)
+        undo_r = pygame.Rect(px + 25, by + 58, pw - 50, 48)
+        menu_r = pygame.Rect(px + 25, by + 116, pw - 50, 48)
 
-        flip_rect = pygame.Rect(panel_x + 20, btn_y, btn_w, 45)
-        undo_rect = pygame.Rect(panel_x + 20, btn_y + 55, btn_w, 45)
-        menu_rect = pygame.Rect(panel_x + 20, btn_y + 110, btn_w, 45)
+        self._btn(flip_r, "Flip Board", mx, my)
+        self._btn(undo_r, "Undo", mx, my)
+        self._btn(menu_r, "Menu", mx, my)
 
-        self._draw_btn(flip_rect, "Flip Board", mx, my)
-        self._draw_btn(undo_rect, "Undo Move", mx, my)
-        self._draw_btn(menu_rect, "Main Menu", mx, my)
+        return flip_r, undo_r, menu_r
 
-        return flip_rect, undo_rect, menu_rect
+    def draw_end_overlay(self):
+        if self.gstate == GameState.PLAYING:
+            return None
 
-    def draw_game_over_overlay(self):
-        if self.game_state == GameState.PLAYING:
-            return
+        s = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+        s.fill(self.C["overlay"])
+        self.disp.blit(s, (0, 0))
 
-        s = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        s.fill(self.COLORS["overlay"])
-        self.display.blit(s, (0, 0))
+        bw, bh = 520, 340
+        cx, cy = self.w // 2, self.h // 2
+        br = pygame.Rect(cx - bw // 2, cy - bh // 2, bw, bh)
 
-        box_w, box_h = 500, 320
-        cx, cy = self.width // 2, self.height // 2
-        box_rect = pygame.Rect(cx - box_w // 2, cy - box_h // 2, box_w, box_h)
+        pygame.draw.rect(self.disp, self.C["panel"], br, border_radius=18)
+        pygame.draw.rect(self.disp, self.C["accent"], br, 3, border_radius=18)
 
-        pygame.draw.rect(self.display, self.COLORS["panel"], box_rect, border_radius=16)
-        pygame.draw.rect(
-            self.display, self.COLORS["accent"], box_rect, 3, border_radius=16
-        )
-
-        # Trophy or draw icon
-        icon_y = cy - 100
-        if "Win" in self.winner_text:
-            # Trophy
-            pygame.draw.circle(self.display, (255, 215, 0), (cx, icon_y), 35)
+        iy = cy - 100
+        if "Win" in self.winner:
+            pygame.draw.circle(self.disp, (255, 215, 0), (cx, iy), 38)
             pygame.draw.rect(
-                self.display,
-                (255, 215, 0),
-                (cx - 15, icon_y + 20, 30, 25),
-                border_radius=3,
+                self.disp, (255, 215, 0), (cx - 16, iy + 22, 32, 28), border_radius=4
             )
         else:
-            # Handshake for draw
-            pygame.draw.circle(self.display, (150, 150, 150), (cx - 15, icon_y), 20)
-            pygame.draw.circle(self.display, (150, 150, 150), (cx + 15, icon_y), 20)
+            pygame.draw.circle(self.disp, (150, 150, 150), (cx - 18, iy), 22)
+            pygame.draw.circle(self.disp, (150, 150, 150), (cx + 18, iy), 22)
 
-        win_col = (255, 215, 0) if "Win" in self.winner_text else self.COLORS["text"]
-        t1 = self.fonts["subheader"].render(self.winner_text, True, win_col)
-        t2 = self.fonts["title"].render(
-            self.end_reason, True, self.COLORS["text_muted"]
-        )
+        wcol = (255, 215, 0) if "Win" in self.winner else self.C["text"]
+        t1 = self.fonts["subhead"].render(self.winner, True, wcol)
+        t2 = self.fonts["title"].render(self.reason, True, self.C["text_muted"])
 
-        self.display.blit(t1, (cx - t1.get_width() // 2, cy - 20))
-        self.display.blit(t2, (cx - t2.get_width() // 2, cy + 30))
+        self.disp.blit(t1, (cx - t1.get_width() // 2, cy - 20))
+        self.disp.blit(t2, (cx - t2.get_width() // 2, cy + 30))
 
-        # New game button
         mx, my = pygame.mouse.get_pos()
-        new_game_rect = pygame.Rect(cx - 100, cy + 90, 200, 50)
-        self._draw_btn(new_game_rect, "New Game", mx, my)
+        ngr = pygame.Rect(cx - 110, cy + 95, 220, 52)
+        self._btn(ngr, "New Game", mx, my)
 
-        return new_game_rect
+        return ngr
 
-    def _draw_btn(self, rect, text, mx, my, active=False, icon=None):
-        hover = rect.collidepoint(mx, my)
-        color = (
-            self.COLORS["accent_hover"]
-            if active or hover
-            else self.COLORS["btn_default"]
-        )
+    def _btn(self, r, txt, mx, my, act=False):
+        hov = r.collidepoint(mx, my)
+        col = self.C["accent_hover"] if (act or hov) else self.C["btn"]
 
-        # Shadow
-        shadow_rect = pygame.Rect(rect.x, rect.y + 3, rect.w, rect.h)
-        pygame.draw.rect(self.display, (20, 20, 20), shadow_rect, border_radius=8)
+        sh = pygame.Rect(r.x, r.y + 3, r.w, r.h)
+        pygame.draw.rect(self.disp, (15, 15, 15), sh, border_radius=8)
+        pygame.draw.rect(self.disp, col, r, border_radius=8)
 
-        # Button
-        pygame.draw.rect(self.display, color, rect, border_radius=8)
+        if hov:
+            pygame.draw.rect(self.disp, self.C["accent"], r, 2, border_radius=8)
 
-        if hover:
-            pygame.draw.rect(
-                self.display, self.COLORS["accent"], rect, 2, border_radius=8
-            )
-
-        # Text with icon
-        if icon:
-            full_text = f"{icon}  {text}"
-        else:
-            full_text = text
-
-        t = self.fonts["normal"].render(full_text, True, self.COLORS["text"])
-        self.display.blit(
-            t, (rect.centerx - t.get_width() // 2, rect.centery - t.get_height() // 2)
+        t = self.fonts["normal"].render(txt, True, self.C["text"])
+        self.disp.blit(
+            t, (r.centerx - t.get_width() // 2, r.centery - t.get_height() // 2)
         )
 
     def draw_menu(self):
-        self.display.fill(self.COLORS["bg"])
+        self.disp.fill(self.C["bg"])
 
-        # Title with gradient effect
-        title_y = 80
-        t1 = self.fonts["header"].render("CHESS", True, self.COLORS["accent"])
-        t2 = self.fonts["subheader"].render("ENGINE", True, self.COLORS["text_muted"])
-        self.display.blit(t1, (self.width // 2 - t1.get_width() // 2, title_y))
-        self.display.blit(t2, (self.width // 2 - t2.get_width() // 2, title_y + 80))
+        t1 = self.fonts["header"].render("CHESS", True, self.C["accent"])
+        t2 = self.fonts["subhead"].render("ENGINE", True, self.C["text_muted"])
+        self.disp.blit(t1, (self.w // 2 - t1.get_width() // 2, 80))
+        self.disp.blit(t2, (self.w // 2 - t2.get_width() // 2, 160))
 
         mx, my = pygame.mouse.get_pos()
+        bw, bh = 360, 72
+        cx, cy = self.w // 2, self.h // 2 - 20
 
-        # Mode selection buttons
-        bw, bh = 350, 70
-        cx = self.width // 2
-        cy = self.height // 2 - 20
+        pvp_r = pygame.Rect(cx - bw // 2, cy - 60, bw, bh)
+        ai_r = pygame.Rect(cx - bw // 2, cy + 40, bw, bh)
 
-        pvp_rect = pygame.Rect(cx - bw // 2, cy - 60, bw, bh)
-        ai_rect = pygame.Rect(cx - bw // 2, cy + 40, bw, bh)
+        self._btn(pvp_r, "Player vs Player", mx, my)
+        self._btn(ai_r, "Player vs AI", mx, my)
 
-        self._draw_btn(pvp_rect, "Player vs Player", mx, my)
-        self._draw_btn(ai_rect, "Player vs AI", mx, my)
+        if ai_r.collidepoint(mx, my) or hasattr(self, "_show_ai"):
+            self._show_ai = True
+            sy = cy + 140
 
-        # AI Settings (only show when hovering AI button)
-        if ai_rect.collidepoint(mx, my) or hasattr(self, "_show_ai_settings"):
-            self._show_ai_settings = True
-            settings_y = cy + 140
+            lbl = self.fonts["normal"].render("Play as:", True, self.C["text"])
+            self.disp.blit(lbl, (cx - bw // 2, sy))
 
-            # Color selection
-            color_label = self.fonts["normal"].render(
-                "Play as:", True, self.COLORS["text"]
-            )
-            self.display.blit(color_label, (cx - bw // 2, settings_y))
+            wr = pygame.Rect(cx - bw // 2 + 105, sy - 5, 105, 42)
+            br = pygame.Rect(cx - bw // 2 + 220, sy - 5, 105, 42)
 
-            white_rect = pygame.Rect(cx - bw // 2 + 100, settings_y - 5, 100, 40)
-            black_rect = pygame.Rect(cx - bw // 2 + 210, settings_y - 5, 100, 40)
+            self._btn(wr, "White", mx, my, self.mcolor == Color.WHITE)
+            self._btn(br, "Black", mx, my, self.mcolor == Color.BLACK)
 
-            white_active = self.menu_selected_color == Color.WHITE
-            black_active = self.menu_selected_color == Color.BLACK
+            if self.slider is None:
+                self.slider = Slider(cx - bw // 2, sy + 65, bw, 20, 1, 8, 5, "AI Depth")
 
-            self._draw_btn(white_rect, "White", mx, my, white_active)
-            self._draw_btn(black_rect, "Black", mx, my, black_active)
+            self.slider.draw(self.disp, self.fonts, self.C)
 
-            # Depth slider
-            if self.depth_slider is None:
-                self.depth_slider = Slider(
-                    cx - bw // 2, settings_y + 60, bw, 20, 1, 8, 5, "AI Depth"
-                )
+            return pvp_r, ai_r, wr, br
 
-            self.depth_slider.draw(self.display, self.fonts, self.COLORS)
+        return pvp_r, ai_r, None, None
 
-            return pvp_rect, ai_rect, white_rect, black_rect
-
-        return pvp_rect, ai_rect, None, None
-
-    def get_color_name(self, color):
-        return "White" if color == Color.WHITE else "Black"
+    def _cname(self, c):
+        return "White" if c == Color.WHITE else "Black"
 
     def init_game(self):
-        pieces, occ, side, castle, ep, ply = parse_fen(FEN)
-        self.board = Board(pieces, occ, side, castle, ep, ply)
-        self.selected = None
-        self.valid_moves = []
-        self.move_log = []
-        self.history_states = []
-        self.last_move = None
-        self.thinking = False
-        self.game_state = GameState.PLAYING
+        p, o, s, c, e, pl = parse_fen(STARTING_FEN)
+        self.board = Board(p, o, s, c, e, pl)
+        self.openings.reset()
+        self.sel, self.valids = None, []
+        self.log, self.states, self.lastmv = [], [], None
+        self.thinking, self.gstate = False, GameState.PLAYING
+        self.flipped = self.mode == GameMode.AI and self.pcolor == Color.BLACK
 
-        # Set board flip based on player color
-        if self.mode == GameMode.AI:
-            self.board_flipped = self.player_color == Color.BLACK
-        else:
-            self.board_flipped = False
-
-        with self.ai_queue.mutex:
-            self.ai_queue.queue.clear()
+        with self.aiqueue.mutex:
+            self.aiqueue.queue.clear()
 
     def handle_click(self, pos):
-        if self.thinking or self.game_state != GameState.PLAYING:
+        if self.thinking or self.gstate != GameState.PLAYING:
             return
 
-        sq = self.pixel_to_square(pos[0], pos[1])
+        sq = self.px2sq(pos[0], pos[1])
         if sq is None:
             return
 
-        if self.selected is None:
-            is_white = self.board.side == Color.WHITE
-            start, end = (0, 6) if is_white else (6, 12)
-            has_piece = False
-            for i in range(start, end):
-                if (self.board.bitboard[i] >> sq) & 1:
-                    has_piece = True
-                    break
+        if self.sel is None:
+            is_w = self.board.side == Color.WHITE
+            start, end = (0, 6) if is_w else (6, 12)
+            has = any((self.board.bitboard[i] >> sq) & 1 for i in range(start, end))
 
-            if has_piece:
-                self.selected = sq
-                self.valid_moves = self.get_legal_moves_for_square(sq)
+            if has:
+                self.sel = sq
+                self.valids = self.legal_for(sq)
         else:
-            if sq == self.selected:
-                self.selected = None
-                self.valid_moves = []
+            if sq == self.sel:
+                self.sel, self.valids = None, []
             else:
-                chosen_move = None
-                possible_moves = [
-                    m for m in self.valid_moves if get_target_square(m) == sq
-                ]
+                chosen = None
+                possible = [m for m in self.valids if get_target_square(m) == sq]
 
-                if possible_moves:
-                    chosen_move = possible_moves[0]
-                    for pm in possible_moves:
+                if possible:
+                    chosen = possible[0]
+                    for pm in possible:
                         if get_flag(pm) in [
                             Flag.QUEEN_PROMOTION,
                             Flag.CAPTURE_PROMOTION_QUEEN,
                         ]:
-                            chosen_move = pm
+                            chosen = pm
                             break
-
-                    self.push_move(chosen_move)
+                    self.push(chosen)
                 else:
-                    self.selected = None
-                    self.valid_moves = []
+                    self.sel, self.valids = None, []
                     self.handle_click(pos)
 
     def run(self):
-        import cProfile
-
-        profiler = cProfile.Profile()
-        profiler.enable()
-
         running = True
-        new_game_rect = None
+        ng_rect = None
 
         while running:
-            # Handle AI move completion
+            # Handle AI completion
             if self.mode == GameMode.AI and self.thinking:
                 try:
-                    m = self.ai_queue.get_nowait()
+                    src, m = self.aiqueue.get_nowait()
                     self.thinking = False
 
                     if m is None:
-                        if self.game_state == GameState.PLAYING:
-                            self.check_game_over()
+                        if self.gstate == GameState.PLAYING:
+                            self.check_end()
                     else:
-                        self.push_move(m)
+                        self.push(m)
                 except queue.Empty:
                     pass
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
                     running = False
 
-                # Handle slider events
-                if self.mode == GameMode.MENU and self.depth_slider:
-                    if self.depth_slider.handle_event(event):
-                        self.ai_depth = self.depth_slider.value
+                # Slider handling
+                if self.mode == GameMode.MENU and self.slider:
+                    if self.slider.handle(ev):
+                        self.depth = self.slider.val
 
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                     if self.mode == GameMode.MENU:
-                        result = self.draw_menu()
-                        pvp_rect, ai_rect = result[0], result[1]
+                        res = self.draw_menu()
+                        pvp_r, ai_r = res[0], res[1]
 
-                        if pvp_rect.collidepoint(event.pos):
+                        if pvp_r.collidepoint(ev.pos):
                             self.mode = GameMode.PVP
-                            self.player_color = Color.WHITE
+                            self.pcolor = Color.WHITE
                             self.init_game()
-                        elif ai_rect.collidepoint(event.pos):
-                            self._show_ai_settings = True
+                        elif ai_r.collidepoint(ev.pos):
+                            self._show_ai = True
 
-                        # Handle color selection
-                        if len(result) > 2 and result[2] is not None:
-                            white_rect, black_rect = result[2], result[3]
-                            if white_rect.collidepoint(event.pos):
-                                self.menu_selected_color = Color.WHITE
-                            elif black_rect.collidepoint(event.pos):
-                                self.menu_selected_color = Color.BLACK
+                        if len(res) > 2 and res[2] is not None:
+                            wr, br = res[2], res[3]
+                            if wr.collidepoint(ev.pos):
+                                self.mcolor = Color.WHITE
+                            elif br.collidepoint(ev.pos):
+                                self.mcolor = Color.BLACK
 
-                            # Start game if settings visible and AI rect clicked again
-                            if ai_rect.collidepoint(event.pos) and hasattr(
-                                self, "_show_ai_settings"
-                            ):
+                            if ai_r.collidepoint(ev.pos) and hasattr(self, "_show_ai"):
                                 self.mode = GameMode.AI
-                                self.player_color = self.menu_selected_color
-                                if self.depth_slider:
-                                    self.ai_depth = self.depth_slider.value
-                                delattr(self, "_show_ai_settings")
+                                self.pcolor = self.mcolor
+                                if self.slider:
+                                    self.depth = self.slider.val
+                                delattr(self, "_show_ai")
                                 self.init_game()
 
-                    elif self.game_state != GameState.PLAYING and new_game_rect:
-                        if new_game_rect.collidepoint(event.pos):
+                    elif self.gstate != GameState.PLAYING and ng_rect:
+                        if ng_rect.collidepoint(ev.pos):
                             self.mode = GameMode.MENU
-                            self.depth_slider = None
+                            self.slider = None
 
                     else:
-                        flip_btn, undo_btn, menu_btn = self.draw_panel()
+                        flip_b, undo_b, menu_b = self.draw_panel()
 
-                        if menu_btn.collidepoint(event.pos):
+                        if menu_b.collidepoint(ev.pos):
                             self.mode = GameMode.MENU
-                            self.depth_slider = None
-                        elif flip_btn.collidepoint(event.pos):
-                            self.board_flipped = not self.board_flipped
-                        elif undo_btn.collidepoint(event.pos):
-                            if (
-                                self.game_state == GameState.PLAYING
-                                and not self.thinking
-                            ):
-                                self.undo_move()
+                            self.slider = None
+                        elif flip_b.collidepoint(ev.pos):
+                            self.flipped = not self.flipped
+                        elif undo_b.collidepoint(ev.pos):
+                            if self.gstate == GameState.PLAYING and not self.thinking:
+                                self.undo()
                                 if self.mode == GameMode.AI:
-                                    self.undo_move()
+                                    self.undo()
                         else:
-                            self.handle_click(event.pos)
+                            self.handle_click(ev.pos)
 
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_u and self.mode != GameMode.MENU:
-                        if not self.thinking and self.game_state == GameState.PLAYING:
-                            self.undo_move()
+                if ev.type == pygame.KEYDOWN:
+                    if ev.key == pygame.K_u and self.mode != GameMode.MENU:
+                        if not self.thinking and self.gstate == GameState.PLAYING:
+                            self.undo()
                             if self.mode == GameMode.AI:
-                                self.undo_move()
-                    elif event.key == pygame.K_f and self.mode != GameMode.MENU:
-                        self.board_flipped = not self.board_flipped
+                                self.undo()
+                    elif ev.key == pygame.K_f and self.mode != GameMode.MENU:
+                        self.flipped = not self.flipped
 
-            # Trigger AI move if needed
+            # Trigger AI
             if (
                 self.mode == GameMode.AI
-                and self.game_state == GameState.PLAYING
+                and self.gstate == GameState.PLAYING
                 and not self.thinking
                 and self.board
             ):
-                # AI plays when it's not the player's turn
-                if self.board.side != self.player_color:
-                    self.start_ai_turn()
+                if self.board.side != self.pcolor:
+                    self.start_ai()
 
             # Render
             if self.mode == GameMode.MENU:
                 self.draw_menu()
             else:
-                self.display.fill(self.COLORS["bg"])
+                self.disp.fill(self.C["bg"])
                 self.draw_board()
                 self.draw_pieces()
                 self.draw_panel()
-                new_game_rect = self.draw_game_over_overlay()
+                ng_rect = self.draw_end_overlay()
 
             pygame.display.flip()
             self.clock.tick(60)
-
-        profiler.disable()
-        profiler.dump_stats("gui_loop.prof")
 
         pygame.quit()
         sys.exit()
 
 
+def interactive_shell():
+    embed()
 
 
 if __name__ == "__main__":
@@ -1017,5 +887,6 @@ if __name__ == "__main__":
         os.makedirs("images")
         print("Tip: Add piece images to 'images/' folder for better visuals.")
 
-    gui = ChessGUI(width=1600, height=1000)
+    gui = ChessGUI(w=1600, h=1000)
+
     gui.run()

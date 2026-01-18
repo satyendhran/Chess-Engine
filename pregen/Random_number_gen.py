@@ -98,83 +98,76 @@ def find_magic_number_bishop(state, square, relevant_bits):
     )  # Failed
 
 
-# === Driver with retries ===
-bishop_relevant_bits = np.load(
-    "BISHOP_RELEVENT_BITS.npy",
-    allow_pickle=True,
-)
-bishop_magics = np.load(
-    "BISHOP_MAGICS.npy",
-    allow_pickle=True,
-)
-bishop_shifts = np.load(
-    "BISHOP_SHIFTS.npy",
-    allow_pickle=True,
-)
-failed_squares = []
-
-state = np.uint64(getrandbits(32))
-state = get_64_bit_random_number(state)
-
-for sq in range(64):
-    print(f"Finding magic number for bishop on square {sq}")
-    found = False
-    state = get_64_bit_random_number(state)
-
-    for attempt in range(5):
-        magic, shift = find_magic_number_bishop(
-            state,
-            np.uint64(sq),
-            np.uint64(bishop_relevant_bits[sq]),
+def generate_bishop_magics():
+    bishop_relevant_bits = np.load(
+        "BISHOP_RELEVENT_BITS.npy",
+        allow_pickle=True,
+    )
+    if exists("BISHOP_MAGICS.npy"):
+        bishop_magics = np.load(
+            "BISHOP_MAGICS.npy",
+            allow_pickle=True,
         )
-        if magic != 0:
-            bishop_magics[sq] = magic
-            bishop_shifts[sq] = shift
-            print(
-                f"Magic number for bishop on square {sq} is {magic} with shift {shift}"
-            )
-            found = True
-            break
-        state = get_64_bit_random_number(state)
-
-    if not found:
-        print(f"Failed to find magic number for square {sq} in first pass")
-        failed_squares.append(sq)
-
-
-save_pregen("BISHOP_MAGICS.npy", bishop_magics)
-save_pregen("BISHOP_SHIFTS.npy", bishop_shifts)
-
-# Second pass for failed squares (10 attempts each)
-if failed_squares:
-    print(f"\nRetrying {len(failed_squares)} failed squares with fresh states...")
-    for sq in failed_squares[:]:
+    else:
+        bishop_magics = np.zeros(64, dtype=np.uint64)
+    if exists("BISHOP_SHIFTS.npy"):
+        bishop_shifts = np.load(
+            "BISHOP_SHIFTS.npy",
+            allow_pickle=True,
+        )
+    else:
+        bishop_shifts = np.zeros(64, dtype=np.uint64)
+    failed_squares = []
+    state = np.uint64(getrandbits(32))
+    state = get_64_bit_random_number(state)
+    for sq in range(64):
+        # print(f"Finding magic number for bishop on square {sq}")
         found = False
-        for _ in range(20):  # fixed at 10 attempts
-            print(f"Finding magic number for bishop on square {sq} attempt {_ + 1}")
-            state = np.uint64(getrandbits(32))
+        state = get_64_bit_random_number(state)
+        for attempt in range(5):
             magic, shift = find_magic_number_bishop(
                 state,
-                np.uint8(sq),
-                np.uint8(bishop_relevant_bits[sq]),
+                np.uint64(sq),
+                np.uint64(bishop_relevant_bits[sq]),
             )
             if magic != 0:
                 bishop_magics[sq] = magic
                 bishop_shifts[sq] = shift
-                print(
-                    f"Recovered magic number for square {sq} is {magic} with shift {shift}"
-                )
-                failed_squares.remove(sq)
+                # print(f"Magic number for bishop on square {sq} is {magic} with shift {shift}")
                 found = True
                 break
+            state = get_64_bit_random_number(state)
         if not found:
-            print(f"Final fail: square {sq}")
-
-save_pregen("BISHOP_MAGICS.npy", bishop_magics)
-save_pregen("BISHOP_SHIFTS.npy", bishop_shifts)
-
-if failed_squares:
-    print(f"\nWARNING: Failed to generate magic numbers for {failed_squares}")
+            # print(f"Failed to find magic number for square {sq} in first pass")
+            failed_squares.append(sq)
+    save_pregen("BISHOP_MAGICS.npy", bishop_magics)
+    save_pregen("BISHOP_SHIFTS.npy", bishop_shifts)
+    if failed_squares:
+        # print(f"\nRetrying {len(failed_squares)} failed squares with fresh states...")
+        for sq in failed_squares[:]:
+            found = False
+            for _ in range(20):
+                # print(f"Finding magic number for bishop on square {sq} attempt {_ + 1}")
+                state = np.uint64(getrandbits(32))
+                magic, shift = find_magic_number_bishop(
+                    state,
+                    np.uint8(sq),
+                    np.uint8(bishop_relevant_bits[sq]),
+                )
+                if magic != 0:
+                    bishop_magics[sq] = magic
+                    bishop_shifts[sq] = shift
+                    # print(f"Recovered magic number for square {sq} is {magic} with shift {shift}")
+                    failed_squares.remove(sq)
+                    found = True
+                    break
+            if not found:
+                # print(f"Final fail: square {sq}")
+                pass
+        save_pregen("BISHOP_MAGICS.npy", bishop_magics)
+        save_pregen("BISHOP_SHIFTS.npy", bishop_shifts)
+    # if failed_squares:
+    #     print(f"\nWARNING: Failed to generate magic numbers for {failed_squares}")
 
 
 @njit(u64[:](u64, u64, u64))
@@ -241,67 +234,33 @@ def find_magic_number_rook(state, square, relevant_bits):
     return np.array([0, 0], dtype=np.uint64)
 
 
-rook_relevant_bits = np.load(
-    "ROOK_RELEVENT_BITS.npy",
-    allow_pickle=True,
-)
-
-# Create magics/shifts arrays if not existing
-if exists("ROOK_MAGICS.npy"):
-    rook_magics = np.load(
-        "ROOK_MAGICS.npy",
+def generate_rook_magics():
+    rook_relevant_bits = np.load(
+        "ROOK_RELEVENT_BITS.npy",
         allow_pickle=True,
     )
-else:
-    rook_magics = np.zeros(64, dtype=np.uint64)
-
-if exists("ROOK_SHIFTS.npy"):
-    rook_shifts = np.load(
-        "ROOK_SHIFTS.npy",
-        allow_pickle=True,
-    )
-else:
-    rook_shifts = np.zeros(64, dtype=np.uint64)
-
-failed_squares = []
-
-state = np.uint64(getrandbits(32))
-state = get_64_bit_random_number(state)
-
-for sq in range(64):
-    print(f"Finding magic number for rook on square {sq}")
-    found = False
-    state = get_64_bit_random_number(state)
-
-    for attempt in range(5):
-        magic, shift = find_magic_number_rook(
-            state,
-            np.uint8(sq),
-            np.uint8(rook_relevant_bits[sq]),
+    if exists("ROOK_MAGICS.npy"):
+        rook_magics = np.load(
+            "ROOK_MAGICS.npy",
+            allow_pickle=True,
         )
-        if magic != 0:
-            rook_magics[sq] = magic
-            rook_shifts[sq] = shift
-            print(f"Magic number for rook on square {sq} is {magic} with shift {shift}")
-            found = True
-            break
-        state = get_64_bit_random_number(state)
-
-    if not found:
-        print(f"Failed to find magic number for square {sq} in first pass")
-        failed_squares.append(sq)
-
-save_pregen("ROOK_MAGICS.npy", rook_magics)
-save_pregen("ROOK_SHIFTS.npy", rook_shifts)
-
-# Second pass for failed squares
-if failed_squares:
-    print(f"\nRetrying {len(failed_squares)} failed squares with fresh states...")
-    for sq in failed_squares[:]:
+    else:
+        rook_magics = np.zeros(64, dtype=np.uint64)
+    if exists("ROOK_SHIFTS.npy"):
+        rook_shifts = np.load(
+            "ROOK_SHIFTS.npy",
+            allow_pickle=True,
+        )
+    else:
+        rook_shifts = np.zeros(64, dtype=np.uint64)
+    failed_squares = []
+    state = np.uint64(getrandbits(32))
+    state = get_64_bit_random_number(state)
+    for sq in range(64):
+        # print(f"Finding magic number for rook on square {sq}")
         found = False
-        for _ in range(10):
-            print(f"Finding magic number for rook on square {sq} attempt {_ + 1}")
-            state = get_64_bit_random_number(state)
+        state = get_64_bit_random_number(state)
+        for attempt in range(5):
             magic, shift = find_magic_number_rook(
                 state,
                 np.uint8(sq),
@@ -310,21 +269,49 @@ if failed_squares:
             if magic != 0:
                 rook_magics[sq] = magic
                 rook_shifts[sq] = shift
-                print(
-                    f"Recovered magic number for square {sq} is {magic} with shift {shift}"
-                )
-                failed_squares.remove(sq)
+                # print(f"Magic number for rook on square {sq} is {magic} with shift {shift}")
                 found = True
                 break
+            state = get_64_bit_random_number(state)
         if not found:
-            print(f"Final fail: square {sq}")
+            # print(f"Failed to find magic number for square {sq} in first pass")
+            failed_squares.append(sq)
+    save_pregen("ROOK_MAGICS.npy", rook_magics)
+    save_pregen("ROOK_SHIFTS.npy", rook_shifts)
+    if failed_squares:
+        # print(f"\nRetrying {len(failed_squares)} failed squares with fresh states...")
+        for sq in failed_squares[:]:
+            found = False
+            for _ in range(10):
+                # print(f"Finding magic number for rook on square {sq} attempt {_ + 1}")
+                state = get_64_bit_random_number(state)
+                magic, shift = find_magic_number_rook(
+                    state,
+                    np.uint8(sq),
+                    np.uint8(rook_relevant_bits[sq]),
+                )
+                if magic != 0:
+                    rook_magics[sq] = magic
+                    rook_shifts[sq] = shift
+                    # print(f"Recovered magic number for square {sq} is {magic} with shift {shift}")
+                    failed_squares.remove(sq)
+                    found = True
+                    break
+            if not found:
+                # print(f"Final fail: square {sq}")
+                pass
+        save_pregen("ROOK_MAGICS.npy", rook_magics)
+        save_pregen("ROOK_SHIFTS.npy", rook_shifts)
+    # if failed_squares:
+    #     print(f"\nFinal failed squares list: {failed_squares}")
+    # else:
+    #     print("\nAll rook magic numbers found successfully!")
 
-# Save after retry phase
-save_pregen("ROOK_MAGICS.npy", rook_magics)
-save_pregen("ROOK_SHIFTS.npy", rook_shifts)
 
-# Print final failed list
-if failed_squares:
-    print(f"\nFinal failed squares list: {failed_squares}")
-else:
-    print("\nAll rook magic numbers found successfully!")
+def generate_all():
+    generate_bishop_magics()
+    generate_rook_magics()
+
+
+if __name__ == "__main__":
+    generate_all()
