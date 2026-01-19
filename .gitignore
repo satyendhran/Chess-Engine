@@ -17,6 +17,10 @@ ROOK_MASK.npy
 ROOK_RELEVENT_BITS.npy
 ROOK_SHIFTS.npy
 tempCodeRunnerFile.py
-Zobrist
-TranspositionTable.py
-TranspositionTests.py
+summa.py
+temp.py
+fens.txt
+formatter.ps1
+gui_loop.prof
+NPS.png 
+output.txt
