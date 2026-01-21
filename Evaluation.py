@@ -70,77 +70,19 @@ PASSED_PAWN_MG = np.array([0, 10, 15, 30, 60, 110, 180, 0], dtype=np.int32)
 PASSED_PAWN_EG = np.array([0, 20, 40, 70, 120, 200, 300, 0], dtype=np.int32)
 CANDIDATE_PAWN_MG = np.array([0, 5, 8, 15, 30, 50, 0, 0], dtype=np.int32)
 CANDIDATE_PAWN_EG = np.array([0, 8, 15, 30, 50, 80, 0, 0], dtype=np.int32)
-
 KING_CENTRALIZATION_EG = np.array(
     [
-        -40,
-        -30,
-        -20,
-        -10,
-        -10,
-        -20,
-        -30,
-        -40,
-        -30,
-        -20,
-        -10,
-        0,
-        0,
-        -10,
-        -20,
-        -30,
-        -20,
-        -10,
-        5,
-        15,
-        15,
-        5,
-        -10,
-        -20,
-        -10,
-        0,
-        15,
-        25,
-        25,
-        15,
-        0,
-        -10,
-        -10,
-        0,
-        15,
-        25,
-        25,
-        15,
-        0,
-        -10,
-        -20,
-        -10,
-        5,
-        15,
-        15,
-        5,
-        -10,
-        -20,
-        -30,
-        -20,
-        -10,
-        0,
-        0,
-        -10,
-        -20,
-        -30,
-        -40,
-        -30,
-        -20,
-        -10,
-        -10,
-        -20,
-        -30,
-        -40,
+        -28, -22, -14,  -4,  -4, -14, -22, -28,
+        -22, -14,  -4,   8,   8,  -4, -14, -22,
+        -14,  -4,   8,  20,  20,   8,  -4, -14,
+         -4,   8,  20,  34,  34,  20,   8,  -4,
+         -4,   8,  20,  34,  34,  20,   8,  -4,
+        -14,  -4,   8,  20,  20,   8,  -4, -14,
+        -22, -14,  -4,   8,   8,  -4, -14, -22,
+        -28, -22, -14,  -4,  -4, -14, -22, -28,
     ],
     dtype=np.int32,
 )
-
 KING_ATTACKER_WEIGHT = np.array([0, 30, 30, 50, 80, 0], dtype=np.int32)
 
 CENTRAL_SQUARES_MASK = np.uint64((1 << 27) | (1 << 28) | (1 << 35) | (1 << 36))
@@ -207,7 +149,7 @@ EDGE_DISTANCE = np.array(
 CENTER_SQUARES = np.array([27, 28, 35, 36], dtype=np.int32)
 
 
-@njit(uint8(uint64), inline="always", fastmath=True, cache=True, nogil=True)
+@njit(uint8(uint64), inline="always", fastmath=True, nogil=True,boundscheck=True, error_model="python")
 def popcount(x):
     x = x - ((x >> 1) & 0x5555555555555555)
     x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
@@ -215,12 +157,12 @@ def popcount(x):
     return uint8((x * 0x0101010101010101) >> 56)
 
 
-@njit(uint64(uint64, uint64), inline="always", fastmath=True, cache=True, nogil=True)
+@njit(uint64(uint64, uint64), inline="always", fastmath=True, nogil=True,boundscheck=True, error_model="python")
 def pop_bit_inline(bb, sq):
     return bb & ~(uint64(1) << sq)
 
 
-@njit(uint32(uint64[:]), inline="always", fastmath=True, cache=True, nogil=True)
+@njit(uint32(uint64[:]), inline="always", fastmath=True, nogil=True,boundscheck=True, error_model="python")
 def compute_phase(bb_arr):
     total = (
         popcount(bb_arr[1])
@@ -236,7 +178,7 @@ def compute_phase(bb_arr):
     return min(phase, uint32(256))
 
 
-@njit(inline="always", fastmath=True, cache=True, nogil=True)
+@njit(inline="always", fastmath=True, nogil=True,boundscheck=True, error_model="python")
 def compute_attack_maps_parallel(bb_arr, occ_all):
     w_pawn_atks = uint64(0)
     b_pawn_atks = uint64(0)
@@ -319,8 +261,7 @@ def compute_attack_maps_parallel(bb_arr, occ_all):
     int64(int32, uint64[:], uint64, uint64, uint64, uint64, uint64, uint64),
     inline="always",
     fastmath=True,
-    cache=True,
-    nogil=True,
+    nogil=True,boundscheck=True, error_model="python"
 )
 def eval_piece_safety(
     phase,
@@ -417,7 +358,7 @@ def eval_piece_safety(
     int64(int32, uint64[:], uint64, uint64, uint64),
     inline="always",
     fastmath=True,
-    nogil=True,
+    nogil=True,boundscheck=True, error_model="python"
 )
 def eval_pieces(phase, bb_arr, occ_all, w_pawn_atks, b_pawn_atks):
     inv_phase = int64(256 - phase)
@@ -513,7 +454,7 @@ def eval_pieces(phase, bb_arr, occ_all, w_pawn_atks, b_pawn_atks):
     int64(int32, uint64[:], uint64, uint64, uint64),
     inline="always",
     fastmath=True,
-    nogil=True,
+    nogil=True,boundscheck=True, error_model="python"
 )
 def eval_pawns(
     phase,
@@ -600,7 +541,7 @@ def eval_pawns(
 
 
 @njit(
-    int32(int32, int32, uint64[:], uint64), inline="always", fastmath=True, nogil=True
+    int32(int32, int32, uint64[:], uint64), inline="always", fastmath=True, nogil=True,boundscheck=True, error_model="python"
 )
 def king_danger(king_sq, is_white, bb_arr, occ_all):
     danger = int32(0)
@@ -685,7 +626,7 @@ def king_danger(king_sq, is_white, bb_arr, occ_all):
 
 
 @njit(
-    int32(int32, uint64[:], uint64, int32), inline="always", fastmath=True, nogil=True
+    int32(int32, uint64[:], uint64, int32), inline="always", fastmath=True, nogil=True,boundscheck=True, error_model="python"
 )
 def eval_king_safety(phase, bb_arr, occ_all, side):
     w_king_sq = lsb(bb_arr[5])
@@ -726,16 +667,11 @@ def eval_king_safety(phase, bb_arr, occ_all, side):
         sign = 1 if side == 0 else -1
         activity = int32(0)
 
-        same_file = (wx == bx) and (dy == 2)
-        same_rank = (wy == by) and (dx == 2)
-        diagonal = (dx == 2) and (dy == 2)
-        activity += sign * (20 * (same_file or same_rank) + 10 * diagonal)
-
         if dx == 0:
-            parity = -10 if (dy & 1) else 10
+            parity = -15 if (dy & 1) else 15
             activity += sign * (7 - dy) * parity
         if dy == 0:
-            parity = -10 if (dx & 1) else 10
+            parity = -15 if (dx & 1) else 15
             activity += sign * (7 - dx) * parity
         if dx == dy:
             parity = -10 if (dx & 1) else 10

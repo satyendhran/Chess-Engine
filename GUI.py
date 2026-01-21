@@ -55,7 +55,7 @@ class FENS:
 
 
 STARTING_FEN = b"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-# STARTING_FEN = FENS.STARTIN
+# STARTING_FEN = FENS.BKQ_VS_WK
 
 
 class GameMode(Enum):
@@ -296,6 +296,7 @@ class ChessGUI:
 
         p, o, s, c, e, pl = parse_fen(STARTING_FEN)
         b = Board(p, o, s, c, e, pl)
+        print(pl,b.halfmove)
         Move_generator(b)
         is_square_attacked(b, 0, 0)
         AI(b, s, 5)
@@ -443,6 +444,7 @@ class ChessGUI:
         except Exception as e:
             print(f"AI error: {e}")
             self.aiqueue.put(("error", None))
+
 
     def draw_board(self):
         for r in range(8):
@@ -720,6 +722,7 @@ class ChessGUI:
     def init_game(self):
         p, o, s, c, e, pl = parse_fen(STARTING_FEN)
         self.board = Board(p, o, s, c, e, pl)
+        print(pl,self.board.halfmove)
         self.openings.reset()
         self.sel, self.valids = None, []
         self.log, self.states, self.lastmv = [], [], None

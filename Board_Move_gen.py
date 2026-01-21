@@ -1764,13 +1764,13 @@ def perft_divide(board, depth: int) -> int:
     MAX_STACK = 15000
     MAX_MOVES = 128
 
-    stack_depth = np.empty(MAX_STACK, np.int64)
-    stack_move_index = np.empty(MAX_STACK, np.int64)
-    stack_move_count = np.empty(MAX_STACK, np.int64)
-    stack_enter_move = np.empty(MAX_STACK, np.int64)
-    stack_enter_castle = np.empty(MAX_STACK, np.int64)
-    stack_enter_enpassant = np.empty(MAX_STACK, np.int64)
-    stack_moves = np.empty((MAX_STACK, MAX_MOVES), np.int64)
+    stack_depth = np.zeros(MAX_STACK, np.int64)
+    stack_move_index = np.zeros(MAX_STACK, np.int64)
+    stack_move_count = np.zeros(MAX_STACK, np.int64)
+    stack_enter_move = np.zeros(MAX_STACK, np.int64)
+    stack_enter_castle = np.zeros(MAX_STACK, np.int64)
+    stack_enter_enpassant = np.zeros(MAX_STACK, np.int64)
+    stack_moves = np.zeros((MAX_STACK, MAX_MOVES), np.int64)
 
     total_nodes = 0
     sp = 0

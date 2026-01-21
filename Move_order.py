@@ -59,7 +59,7 @@ def score(move, ply):
 @njit
 def sort_moves(moves, ply):
     n = moves.counter
-    scores = np.empty(n, dtype=np.int32)
+    scores = np.zeros(n, dtype=np.int32)
 
     for i in range(n):
         scores[i] = score(moves.moves[i], ply)

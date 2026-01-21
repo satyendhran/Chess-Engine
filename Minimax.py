@@ -16,7 +16,7 @@ from Board_Move_gen import (
     unmove,
 )
 from Constants import Color, Pieces
-from Evaluation import Evaluation,popcount
+from Evaluation import Evaluation, popcount
 from Move_gen_pieces import (
     get_bishop_attacks,
     get_king_attacks,
@@ -43,10 +43,9 @@ PIECE_VALUES = np.array(
 TT_SIZE = np.int64(1 << 26)
 TT_EMPTY = np.uint8(255)
 
-
 FUTILITY_MARGIN = np.array([0, 200, 350, 500], dtype=np.int64)
 RFP_MARGIN = int64(75)
-LMP_DEPTH = 6  
+LMP_DEPTH = 6
 
 PROBCUT_MARGIN = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int64)
 
@@ -76,40 +75,35 @@ class TranspositionTable:
         idx = int64(key & self.mask)
         if idx < 0 or idx >= self.size:
             return False, int64(0), int64(0), uint8(0), uint64(0)
-        
-        
+
         if self.keys[idx] != key or self.flags[idx] == TT_EMPTY:
             return False, int64(0), int64(0), uint8(0), uint64(0)
-        
+
         d = self.depth[idx]
         s = self.score[idx]
         f = self.flags[idx]
         m = self.move[idx]
-        
-        
+
         if d >= depth and (f == 0 or (f == 1 and s >= beta) or (f == 2 and s <= alpha)):
             return True, d, s, f, m
-        
-        
+
         return False, d, s, f, m
 
     def store(self, key, depth, score, flag, move):
         idx = int64(key & self.mask)
         if idx < 0 or idx >= self.size:
             return
-        
-        
+
         if (
-            self.flags[idx] == TT_EMPTY
-            or depth >= self.depth[idx]
-            or (flag == 0 and self.flags[idx] != 0)
+                self.flags[idx] == TT_EMPTY
+                or depth >= self.depth[idx]
+                or (flag == 0 and self.flags[idx] != 0)
         ):
-            self.keys[idx] = key  
+            self.keys[idx] = key
             self.depth[idx] = np.int16(depth)
             self.score[idx] = score
             self.flags[idx] = np.uint8(flag)
             self.move[idx] = move
-
 
 @njit(boundscheck=True, error_model="python")
 def safe_array_access(arr, idx, default_val):
@@ -145,17 +139,15 @@ def has_non_pawn_material(board, side):
 
 @njit(boundscheck=True, error_model="python")
 def count_total_material(board):
-    """Count all non-king material on the board"""
     total = 0
     for i in range(min(12, len(board.bitboard))):
-        if i != 5 and i != 11:  
+        if i != 5 and i != 11:
             total += count_bits(board.bitboard[i])
     return total
 
 
 @njit(boundscheck=True, error_model="python")
 def is_basic_endgame(board):
-    """Detect if we're in a very basic endgame (few pieces)"""
     return count_total_material(board) <= 4
 
 
@@ -166,7 +158,7 @@ def quick_phase(board):
     bb = board.bitboard
     p = count_bits(bb[1]) + count_bits(bb[7]) + count_bits(bb[2]) + count_bits(bb[8])
     p += 2 * (count_bits(bb[3]) + count_bits(bb[9])) + 4 * (
-        count_bits(bb[4]) + count_bits(bb[10])
+            count_bits(bb[4]) + count_bits(bb[10])
     )
     return min(p, 24)
 
@@ -174,11 +166,11 @@ def quick_phase(board):
 @njit(boundscheck=True, error_model="python")
 def attackers_to_square(board, sq):
     if sq < 0 or sq >= 64:
-        return np.empty(0, np.int32), np.empty(0, np.int32), 0, 0
+        return np.zeros(0, np.int32), np.zeros(0, np.int32), 0, 0
     occ, aw, bw, cw, cb = (
         board.occupancy[2],
-        np.empty(16, np.int32),
-        np.empty(16, np.int32),
+        np.zeros(16, np.int32),
+        np.zeros(16, np.int32),
         0,
         0,
     )
@@ -218,7 +210,7 @@ def attackers_to_square(board, sq):
 
 @njit(boundscheck=True, error_model="python")
 def see_gain(target_value, aw, bw, cw, cb, side):
-    gains = np.empty(32, np.int32)
+    gains = np.zeros(32, np.int32)
     gains[0], iw, ib, g, turn = target_value, 0, 0, 0, side
     for _ in range(32):
         if turn == COLOR_WHITE:
@@ -241,40 +233,34 @@ def see_ge(board, mv, threshold):
     cap = get_capture_piece(mv)
     if cap == 12 or cap >= len(PIECE_VALUES):
         return cap == 12
-    
+
     sq = get_target_square(mv)
     if sq < 0 or sq >= 64:
         return False
-    
-    
+
     attacker_piece = get_starting_piece(mv)
     if attacker_piece >= len(PIECE_VALUES):
         return False
-        
+
     victim_value = PIECE_VALUES[cap]
     attacker_value = PIECE_VALUES[attacker_piece % 6]
-    
-    
+
     if victim_value >= attacker_value:
         return True
-    
-    
+
     if victim_value < attacker_value and threshold > int64(0):
         return False
-    
-    
+
     aw, bw, cw, cb = attackers_to_square(board, sq)
-    
-    
+
     if board.side == COLOR_WHITE:
         cw = remove_one(aw, cw, attacker_piece)
     else:
         cb = remove_one(bw, cb, attacker_piece)
-    
+
     gain = victim_value
     side = 1 - board.side
-    
-    
+
     for depth in range(16):
         if side == COLOR_WHITE:
             if cw == 0:
@@ -294,10 +280,11 @@ def see_ge(board, mv, threshold):
                 break
             piece_val = PIECE_VALUES[p % 6]
             gain = gain + piece_val
-        
+
         side = 1 - side
-    
+
     return gain >= threshold
+
 
 @njit(boundscheck=True, error_model="python")
 def pop_least(arr, count):
@@ -343,7 +330,7 @@ def is_promotion_move(mv):
     return promo != 0
 
 
-@njit(boundscheck=True, error_model="python")
+@njit()
 def score_move(board, mv, ply, killers, history, tt_move, capture_history, is_endgame):
     if mv == tt_move:
         return int64(30000000)
@@ -354,32 +341,29 @@ def score_move(board, mv, ply, killers, history, tt_move, capture_history, is_en
     captured = get_capture_piece(mv)
     piece = get_starting_piece(mv)
     target = get_target_square(mv)
-    
-    
+
     endgame_king_pressure = int64(0)
     if is_endgame and piece < 13:
-        
+
         opp_king_piece = P_k if board.side == COLOR_WHITE else P_K
         if opp_king_piece < len(board.bitboard):
             opp_king_bb = board.bitboard[opp_king_piece]
             if opp_king_bb != 0:
                 opp_king_sq = get_lsb1_index(opp_king_bb)
                 if opp_king_sq >= 0 and opp_king_sq < 64 and target >= 0 and target < 64:
-                    
+
                     king_rank = opp_king_sq >> 3
                     king_file = opp_king_sq & 7
                     target_rank = target >> 3
                     target_file = target & 7
-                    
+
                     rank_dist = abs(king_rank - target_rank)
                     file_dist = abs(king_file - target_file)
                     chebyshev_dist = max(rank_dist, file_dist)
                     manhattan_dist = rank_dist + file_dist
-                    
-                    
-                    
+
                     if chebyshev_dist == 0:
-                        endgame_king_pressure = int64(50000)  
+                        endgame_king_pressure = int64(50000)
                     elif chebyshev_dist == 1:
                         endgame_king_pressure = int64(30000)
                     elif chebyshev_dist == 2:
@@ -388,33 +372,31 @@ def score_move(board, mv, ply, killers, history, tt_move, capture_history, is_en
                         endgame_king_pressure = int64(6000)
                     elif chebyshev_dist == 4:
                         endgame_king_pressure = int64(2000)
-                    
-                    
+
                     piece_type = piece % 6
                     attacks_king_zone = False
-                    
-                    if piece_type == 1:  
+
+                    if piece_type == 1:
                         attacks = get_knight_attacks(target)
                         if (attacks >> opp_king_sq) & 1:
                             endgame_king_pressure += int64(20000)
                             attacks_king_zone = True
-                    elif piece_type == 2:  
+                    elif piece_type == 2:
                         attacks = get_bishop_attacks(target, board.occupancy[2])
                         if (attacks >> opp_king_sq) & 1:
                             endgame_king_pressure += int64(25000)
                             attacks_king_zone = True
-                    elif piece_type == 3:  
+                    elif piece_type == 3:
                         attacks = get_rook_attacks(target, board.occupancy[2])
                         if (attacks >> opp_king_sq) & 1:
                             endgame_king_pressure += int64(30000)
                             attacks_king_zone = True
-                    elif piece_type == 4:  
+                    elif piece_type == 4:
                         attacks = get_queen_attacks(target, board.occupancy[2])
                         if (attacks >> opp_king_sq) & 1:
                             endgame_king_pressure += int64(40000)
                             attacks_king_zone = True
-                    
-                    
+
                     if attacks_king_zone:
                         king_attacks = get_king_attacks(opp_king_sq)
                         controlled_escape_squares = 0
@@ -424,15 +406,13 @@ def score_move(board, mv, ply, killers, history, tt_move, capture_history, is_en
                             if (attacks >> escape_sq) & 1:
                                 controlled_escape_squares += 1
                             temp_king_attacks = pop_bit(temp_king_attacks, escape_sq)
-                        
+
                         endgame_king_pressure += int64(controlled_escape_squares * 4000)
-                    
-                    
-                    if piece_type == 3 or piece_type == 4:  
+
+                    if piece_type == 3 or piece_type == 4:
                         if target_rank == king_rank or target_file == king_file:
                             endgame_king_pressure += int64(8000)
-                    
-                    
+
                     target_center_dist = max(abs(3 - target_rank), abs(3 - target_file))
                     if target_center_dist <= 2:
                         endgame_king_pressure += int64((2 - target_center_dist) * 1000)
@@ -444,38 +424,34 @@ def score_move(board, mv, ply, killers, history, tt_move, capture_history, is_en
         victim_vals = np.array([100, 320, 330, 500, 900, 0, 100, 320, 330, 500, 900, 0, 0], dtype=np.int64)
         victim, attacker = victim_vals[captured], victim_vals[piece]
 
-        
         score = int64(15000) + victim * int64(100) - attacker
 
-        
         if is_endgame:
             score += endgame_king_pressure
 
-        
         if attacker > victim:
             if not see_ge(board, mv, int64(-100 if is_endgame else 0)):
                 score -= int64(8000)
-                
+
                 if is_endgame and endgame_king_pressure > int64(2000):
-                    score += int64(4000)  
+                    score += int64(4000)
 
         if (
-            piece < 12
-            and target < 64
-            and piece < len(capture_history)
-            and target < len(capture_history[0])
+                piece < 12
+                and target < 64
+                and piece < len(capture_history)
+                and target < len(capture_history[0])
         ):
             score += capture_history[piece][target] >> 2
 
         return score
     else:
-        
+
         score = int64(0)
-        
-        
+
         if is_endgame:
             score += endgame_king_pressure
-        
+
         if ply < MAX_PLY and ply < len(killers[0]):
             if mv == killers[0][ply]:
                 score += int64(9000)
@@ -483,14 +459,15 @@ def score_move(board, mv, ply, killers, history, tt_move, capture_history, is_en
                 score += int64(8000)
 
         if (
-            piece < 12
-            and target < 64
-            and piece < len(history)
-            and target < len(history[0])
+                piece < 12
+                and target < 64
+                and piece < len(history)
+                and target < len(history[0])
         ):
             score += history[piece][target]
-        
+
         return score
+
 
 @njit(boundscheck=True, error_model="python")
 def insertion_sort_moves(mvs, scores, n):
@@ -507,9 +484,10 @@ def insertion_sort_moves(mvs, scores, n):
         scores[j + 1] = key_score
         mvs.moves[j + 1] = key_move
 
+
 @njit(boundscheck=True, error_model="python")
 def sort_moves_with_scores(
-    board, mvs, ply, killers, history, tt_move, capture_history, is_endgame
+        board, mvs, ply, killers, history, tt_move, capture_history, is_endgame
 ):
     if mvs.counter <= 1 or mvs.counter > len(mvs.moves):
         return
@@ -522,7 +500,7 @@ def sort_moves_with_scores(
                 board, mvs.moves[i], ply, killers, history,
                 tt_move, capture_history, is_endgame
             ) if mvs.moves[i] != 0 else int64(-999999999)
-            
+
             for j in range(i + 1, mvs.counter):
                 if j >= len(mvs.moves):
                     break
@@ -530,13 +508,13 @@ def sort_moves_with_scores(
                     board, mvs.moves[j], ply, killers, history,
                     tt_move, capture_history, is_endgame
                 ) if mvs.moves[j] != 0 else int64(-999999999)
-                
+
                 if score_j > score_i:
                     mvs.moves[i], mvs.moves[j] = mvs.moves[j], mvs.moves[i]
                     score_i = score_j
         return
-    
-    scores = np.empty(mvs.counter, dtype=np.int64)
+
+    scores = np.zeros(mvs.counter, dtype=np.int64)
     for i in range(mvs.counter):
         if i >= len(mvs.moves):
             break
@@ -555,6 +533,7 @@ def sort_moves_with_scores(
             else int64(-999999999)
         )
     insertion_sort_moves(mvs, scores, mvs.counter)
+
 
 @njit(boundscheck=True, error_model="python")
 def is_tactical_position(board):
@@ -586,46 +565,36 @@ def is_tactical_position(board):
 
 @njit(boundscheck=True, error_model="python")
 def quiescence_negamax(
-    board, ply, alpha, beta, killers, history, capture_history, stats, tt, depth_limit=10  
+        board, ply, alpha, beta, killers, history, capture_history, stats, tt, depth_limit=10
 ):
-    if ply >= depth_limit:
-        return int64(0)
 
     if len(stats) > 0:
         stats[0] += 1
 
     in_check = is_in_check(board, board.side)
-    stand_pat = int64(0)
+
+
+    evaluator = Evaluation(board)
+    stand_pat = evaluator.evaluate()
+    if len(stats) > 3:
+        stats[3] += 1
+    if board.side != COLOR_WHITE:
+        stand_pat = -stand_pat
+
+    if ply >= depth_limit:
+        return stand_pat
 
     if not in_check:
-        
-        tt_found, tt_d, tt_s, tt_f, tt_m = tt.probe(board.hash, int64(0), alpha, beta)
-        if tt_found and tt_f != TT_EMPTY:
-            
-            stand_pat = tt_s
-            if tt_f == 0 or (tt_f == 1 and tt_s >= beta) or (tt_f == 2 and tt_s <= alpha):
-                return tt_s
-        else:
-            
-            evaluator = Evaluation(board)
-            stand_pat = evaluator.evaluate()
-            if len(stats) > 3:
-                stats[3] += 1
-            if board.side != COLOR_WHITE:
-                stand_pat = -stand_pat
-
         if stand_pat >= beta:
-            tt.store(board.hash, int64(0), stand_pat, uint8(1), uint64(0))
             return stand_pat
 
         if stand_pat > alpha:
             alpha = stand_pat
 
-        
         delta = int64(900)
         if stand_pat + delta < alpha:
             if popcount(board.bitboard[0] & uint64(0xFF000000000000)) == 0 and \
-               popcount(board.bitboard[6] & uint64(0xFF00)) == 0:
+                    popcount(board.bitboard[6] & uint64(0xFF00)) == 0:
                 return alpha
 
     mvs = Move_generator(board) if in_check else Capture_generator(board)
@@ -636,7 +605,7 @@ def quiescence_negamax(
 
     a, b, c = board.castle, board.enpassant, board.halfmove
     best_score = stand_pat
-    best_move = uint64(0)
+    legal_count = 0
 
     for i in range(min(mvs.counter, len(mvs.moves))):
         mv = mvs.moves[i]
@@ -656,6 +625,8 @@ def quiescence_negamax(
         if not Move(board, mv):
             continue
 
+        legal_count += 1
+
         score = -quiescence_negamax(
             board,
             ply + 1,
@@ -665,82 +636,71 @@ def quiescence_negamax(
             history,
             capture_history,
             stats,
-            tt,  
+            tt,
             depth_limit,
         )
         unmove(board, mv, a, b, c)
 
         if score > best_score:
             best_score = score
-            best_move = mv
 
         if score >= beta:
-            tt.store(board.hash, int64(0), score, uint8(1), mv)
             return score
         if score > alpha:
             alpha = score
 
-    
-    flag = uint8(1) if best_score >= beta else (uint8(2) if best_score <= alpha else uint8(0))
-    tt.store(board.hash, int64(0), best_score, flag, best_move)
+    if in_check and legal_count == 0:
+        return -MATE_SCORE + int64(ply)
 
-    return alpha
-
-
-@njit(boundscheck=True, error_model="python")
-def count_repetitions(game_history, current_hash, halfmove):
-    if halfmove < 4:
-        return 0
-    
-    count = 0
-    
-    lookback = min(halfmove, len(game_history) - 1)
-    
-    for i in range(lookback):
-        if i >= len(game_history):
-            break
-        if game_history[len(game_history) - 1 - i] == current_hash:
-            count += 1
-            if count >= 2:
-                return count
-    
-    return count
+    return best_score
 
 
 @njit(boundscheck=True, error_model="python")
 def negamax(
-    board,
-    depth,
-    ply,
-    alpha,
-    beta,
-    killers,
-    history,
-    capture_history,
-    allow_null,
-    tt,
-    stop_flag,
-    game_history,
-    stats,
+        board,
+        depth,
+        ply,
+        alpha,
+        beta,
+        killers,
+        history,
+        capture_history,
+        allow_null,
+        tt,
+        stop_flag,
+        game_history,
+        stats,
 ):
-    if ply >= MAX_SEARCH_DEPTH:
-        return int64(0)
-
     if len(stats) > 0:
         stats[0] += 1
 
+
+
     if ply > 0:
+
         reps = count_repetitions(game_history, board.hash, board.halfmove)
         if reps >= 2:
-            return int64(0) 
+            return int64(0)
 
-    if (len(stop_flag) > 0 and stop_flag[0] != 0) or board.halfmove >= 100:
+    if len(stop_flag) > 0 and stop_flag[0] != 0:
         return int64(0)
 
-    alpha, beta = (
-        max(alpha, -MATE_SCORE + int64(ply)),
-        min(beta, MATE_SCORE - int64(ply) - int64(1)),
-    )
+
+
+    if board.halfmove >= 100:
+        return int64(0)
+
+    if ply >= MAX_SEARCH_DEPTH:
+        evaluator = Evaluation(board)
+        eval_score = evaluator.evaluate()
+        if len(stats) > 3:
+            stats[3] += 1
+        if board.side != COLOR_WHITE:
+            eval_score = -eval_score
+        return eval_score
+
+    alpha = max(alpha, -MATE_SCORE + int64(ply))
+    beta = min(beta, MATE_SCORE - int64(ply) - int64(1))
     if alpha >= beta:
         return alpha
 
@@ -750,24 +710,22 @@ def negamax(
     is_endgame = phase <= 8
     is_basic_eg = is_basic_endgame(board)
 
-    
     if in_check:
         depth += int64(1)
-    
-    
+
     if depth <= int64(0):
-            return quiescence_negamax(
-                board, ply, alpha, beta, killers, history, capture_history, stats,tt
-            )
+        return quiescence_negamax(
+            board, ply, alpha, beta, killers, history, capture_history, stats, tt
+        )
 
     tt_found, tt_d, tt_s, tt_f, tt_m = tt.probe(board.hash, depth, alpha, beta)
     if tt_found and tt_d >= depth and not is_pv_node:
         if len(stats) > 1:
             stats[1] += 1
         if (
-            (tt_f == uint8(0))
-            or (tt_f == uint8(1) and tt_s >= beta)
-            or (tt_f == uint8(2) and tt_s <= alpha)
+                (tt_f == uint8(0))
+                or (tt_f == uint8(1) and tt_s >= beta)
+                or (tt_f == uint8(2) and tt_s <= alpha)
         ):
             if len(stats) > 2:
                 stats[2] += 1
@@ -789,14 +747,13 @@ def negamax(
 
     is_tactical = is_tactical_position(board)
 
-    
     if (
-        not is_pv_node
-        and not in_check
-        and not is_tactical
-        and depth <= int64(2)
-        and not is_endgame
-        and not is_basic_eg  
+            not is_pv_node
+            and not in_check
+            and not is_tactical
+            and depth <= int64(2)
+            and not is_endgame
+            and not is_basic_eg
     ):
         margin = int64(200) if depth == int64(1) else int64(400)
 
@@ -815,16 +772,15 @@ def negamax(
             if qscore + margin < alpha:
                 return qscore
 
-    
     if (
-        allow_null
-        and not is_pv_node
-        and depth >= int64(4)
-        and not in_check
-        and not is_tactical
-        and not is_basic_eg  
-        and has_non_pawn_material(board, board.side)
-        and static_eval >= beta + int64(100)
+            allow_null
+            and not is_pv_node
+            and depth >= int64(4)
+            and not in_check
+            and not is_tactical
+            and not is_basic_eg
+            and has_non_pawn_material(board, board.side)
+            and static_eval >= beta + int64(100)
     ):
         board.side, old_ep, board.enpassant = 1 - board.side, board.enpassant, 64
 
@@ -869,41 +825,11 @@ def negamax(
             else:
                 return beta
 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
     mvs = Move_generator(board)
     sort_moves_with_scores(
         board, mvs, ply, killers, history, tt_move, capture_history, is_basic_eg
     )
+
 
     a, b, c = board.castle, board.enpassant, board.halfmove
     legal_moves = 0
@@ -924,18 +850,17 @@ def negamax(
         is_promo = is_promotion_move(mv)
         gives_check = is_in_check(board, 1 - board.side)
 
-        
         lmr_threshold = 8 if is_basic_eg else (6 if is_endgame else 4)
 
         if (
-            not is_pv_node
-            and depth >= int64(4)
-            and legal_moves > lmr_threshold
-            and not is_capture
-            and not is_promo
-            and not gives_check
-            and not is_tactical
-            and not is_basic_eg  
+                not is_pv_node
+                and depth >= int64(4)
+                and legal_moves > lmr_threshold
+                and not is_capture
+                and not is_promo
+                and not gives_check
+                and not is_tactical
+                and not is_basic_eg
         ):
             reduction = int64(1)
             threshold = 24 if is_endgame else 16
@@ -943,16 +868,15 @@ def negamax(
                 unmove(board, mv, a, b, c)
                 continue
 
-        
         if (
-            not is_pv_node
-            and not in_check
-            and depth <= int64(2)
-            and not is_capture
-            and not is_promo
-            and not gives_check
-            and not is_basic_eg 
-            and not is_endgame
+                not is_pv_node
+                and not in_check
+                and depth <= int64(2)
+                and not is_capture
+                and not is_promo
+                and not gives_check
+                and not is_basic_eg
+                and not is_endgame
         ):
             margin_idx = int(depth)
             if margin_idx < len(FUTILITY_MARGIN):
@@ -1046,10 +970,10 @@ def negamax(
                         piece = get_starting_piece(mv)
                         target = get_target_square(mv)
                         if (
-                            piece < 12
-                            and target < 64
-                            and piece < len(history)
-                            and target < len(history[0])
+                                piece < 12
+                                and target < 64
+                                and piece < len(history)
+                                and target < len(history[0])
                         ):
                             bonus = depth * depth
                             history[piece][target] += bonus
@@ -1072,10 +996,28 @@ def negamax(
 
     return best_score
 
+@njit(boundscheck=True, error_model="python")
+def count_repetitions(game_history, current_hash, halfmove):
+    if halfmove < 4:
+        return 0
+
+    count = 0
+
+    lookback = min(halfmove, len(game_history) - 1)
+
+    for i in range(lookback):
+        if i >= len(game_history):
+            break
+        if game_history[len(game_history) - 1 - i] == current_hash:
+            count += 1
+            if count >= 2:
+                return count
+
+    return count
 
 @njit(boundscheck=True, error_model="python")
 def search_root(
-    board, depth, killers, history, capture_history, tt, stop_flag, game_history, stats
+        board, depth, killers, history, capture_history, tt, stop_flag, game_history, stats
 ):
     mvs = Move_generator(board)
     alpha, beta = -MATE_SCORE, MATE_SCORE
@@ -1136,64 +1078,60 @@ def search_root(
 
 @njit(boundscheck=True, error_model="python")
 def search_with_aspiration(
-    board,
-    depth,
-    prev_score,
-    killers,
-    history,
-    capture_history,
-    tt,
-    stop_flag,
-    game_history,
-    stats,
+        board,
+        depth,
+        prev_score,
+        killers,
+        history,
+        capture_history,
+        tt,
+        stop_flag,
+        game_history,
+        stats,
 ):
     window = ASPIRATION_WINDOW
     alpha = max(prev_score - window, -MATE_SCORE)
     beta = min(prev_score + window, MATE_SCORE)
-    
-    
+
     best_move, best_score = search_root_internal(
-        board, depth, alpha, beta, killers, history, 
+        board, depth, alpha, beta, killers, history,
         capture_history, tt, stop_flag, game_history, stats
     )
-    
+
     if stop_flag[0] != 0:
         return best_move, best_score
-    
-    
+
     if best_score <= alpha or best_score >= beta:
-        
+
         for i in range(4):
             if best_score <= alpha:
                 alpha = max(alpha - window * (2 ** i), -MATE_SCORE)
             if best_score >= beta:
                 beta = min(beta + window * (2 ** i), MATE_SCORE)
-            
+
             best_move, best_score = search_root_internal(
                 board, depth, alpha, beta, killers, history,
                 capture_history, tt, stop_flag, game_history, stats
             )
-            
+
             if stop_flag[0] != 0:
                 return best_move, best_score
-            
-            
+
             if alpha < best_score < beta:
                 return best_move, best_score
-        
-        
+
         return search_root(
             board, depth, killers, history, capture_history,
             tt, stop_flag, game_history, stats
         )
-    
+
     return best_move, best_score
 
 
 @njit(boundscheck=True, error_model="python")
 def search_root_internal(
-    board, depth, alpha, beta, killers, history,
-    capture_history, tt, stop_flag, game_history, stats
+        board, depth, alpha, beta, killers, history,
+        capture_history, tt, stop_flag, game_history, stats
 ):
     mvs = Move_generator(board)
     tt_found, tt_d, tt_s, tt_f, tt_m = tt.probe(board.hash, depth, alpha, beta)
@@ -1248,20 +1186,20 @@ class TimeManager:
 
     def is_expired(self):
         return (
-            self.allocated_time > 0
-            and (time.time() - self.start_time) >= self.allocated_time
+                self.allocated_time > 0
+                and (time.time() - self.start_time) >= self.allocated_time
         )
 
 
 class SingleSearch:
     def __init__(
-        self,
-        board,
-        depth=64,
-        time_limit=0,
-        increment=0,
-        movestogo=30,
-        game_history=None,
+            self,
+            board,
+            depth=64,
+            time_limit=0,
+            increment=0,
+            movestogo=30,
+            game_history=None,
     ):
         self.board = board
         self.depth = depth if depth > 0 else 64
@@ -1280,7 +1218,7 @@ class SingleSearch:
         best_score = 0
 
         for d in range(1, self.depth + 1):
-            if d>1:
+            if d > 1:
                 history //= 2
                 capture_history //= 2
             if self.stop_flag[0]:
@@ -1290,7 +1228,7 @@ class SingleSearch:
                 self.stop_flag[0] = 1
                 break
 
-            stats = np.zeros(4, dtype=np.int64)
+            stats = np.zeros(5, dtype=np.int64)
             t0 = time.time()
 
             if d == 1:
@@ -1338,7 +1276,7 @@ class SingleSearch:
             elapsed = max(1e-6, time.time() - t0)
             nps = int(int(stats[0]) / elapsed)
             print(
-                f"info stats depth {d} nodes {int(stats[0])} tt_hits {int(stats[1])} tt_cutoffs {int(stats[2])} evals {int(stats[3])} nps {nps}"
+                f"info stats depth {d} nodes {int(stats[0])} tt_hits {int(stats[1])} tt_cutoffs {int(stats[2])} evals {int(stats[3])} nps {nps} DEBUG {stats[4]}"
             )
 
         return self.best_move
@@ -1348,6 +1286,3 @@ def AI(board, side, depth):
     searcher = SingleSearch(board, depth)
     result = searcher.search()
     return result
-
-
-

@@ -1,6 +1,7 @@
 from typing import Literal
 
 import numpy as np
+from Cython.Shadow import boundscheck
 from numba import njit
 from numba.experimental import jitclass
 from numba.types import uint8 as u8  # type:ignore
@@ -38,7 +39,7 @@ def piece_at(bitboards, sq):
     return -1
 
 
-@njit
+# @njit(boundscheck = True,error_model="python")
 def parse_fen(fen: bytes):
     start_fen = b"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     if len(start_fen) == len(fen) and np.all(
@@ -89,10 +90,10 @@ def parse_fen(fen: bytes):
 
     for i in range(len(parts[2])):
         c = parts[2][i]
-        castle |= np.uint8((c == ord("K")) << 0)
-        castle |= np.uint8((c == ord("Q")) << 1)
-        castle |= np.uint8((c == ord("k")) << 2)
-        castle |= np.uint8((c == ord("q")) << 3)
+        castle |= np.uint8((c == 75) << 0)
+        castle |= np.uint8((c == 81) << 1)
+        castle |= np.uint8((c == 107) << 2)
+        castle |= np.uint8((c == 113) << 3)
 
     occupancy = np.zeros(3, dtype=np.uint64)
     occupancy[0] = pieces[0] | pieces[1] | pieces[2] | pieces[3] | pieces[4] | pieces[5]
@@ -100,21 +101,25 @@ def parse_fen(fen: bytes):
         pieces[6] | pieces[7] | pieces[8] | pieces[9] | pieces[10] | pieces[11]
     )
     occupancy[2] = occupancy[0] | occupancy[1]
+    side = 0
     if parts[1][0] == 119:
         side = np.uint8(0)
     else:
         side = np.uint8(1)
+    enpassant = 0
     if len(parts[3]) == 1 and parts[3][0] == ord("-"):
         enpassant = np.uint8(64)
     else:
         file = np.uint8(parts[3][0] - 97)
         rank = np.uint8(parts[3][1] - 49)
         enpassant = np.uint8((8 - rank) * 8 + file)
-    l = len(parts[3])
+    l = len(parts[4])
+    ply = 0
+
     if l == 1:
-        ply = parts[3][0] - 48
+        ply = parts[4][0] - 48
     else:
-        ply = 10 * (parts[3][0] - 48) + (parts[3][1] - 48)
+        ply = 10 * (parts[4][0] - 48) + (parts[4][1] - 48)
 
     return (pieces, occupancy, side, castle, enpassant, ply)
 

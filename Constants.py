@@ -177,7 +177,7 @@ class Flag(IntEnum):
 
 
 class Castle(IntEnum):
-    WK = 0b1
-    WQ = 0b10
-    BK = 0b100
+    WK = 0b0001
+    WQ = 0b0010
+    BK = 0b0100
     BQ = 0b1000
