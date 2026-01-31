@@ -280,8 +280,7 @@ searcher = SingleSearch(
 - [ ] **UCI Protocol**: Standard chess interface support
 - [ ] **NNUE Evaluation**: Neural network-based position assessment
 - [ ] **Multi-Threading**: Parallel search with Lazy SMP
-- [ ] **PGN Support**: Load and save games in standard notation
-- [ ] **Analysis Mode**: Position analysis with multiple variations
+- [ ] **Better Analysis Mode**: Position analysis with multiple variations
 - [ ] **ELO Rating System**: Track player strength over time
 - [ ] **Online Play**: Network multiplayer support
 - [ ] **Mobile Version**: Touch-friendly interface for tablets
@@ -289,7 +288,6 @@ searcher = SingleSearch(
 
 ### Optimization Targets
 - [ ] Bitboard attack generation improvements
-- [ ] Better move ordering with history heuristics
 - [ ] Singular extension search
 - [ ] Multi-cut pruning
 - [ ] Razoring
