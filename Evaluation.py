@@ -1,5 +1,5 @@
 import numpy as np
-from numba import int32, int64, njit, uint8, uint32, uint64
+from numba import int32, int64, njit as _njit, uint8, uint32, uint64
 from numba.experimental import jitclass
 
 from Board import Board
@@ -13,6 +13,18 @@ from Move_gen_pieces import (
 )
 from pregen.Utilities import get_lsb1_index as lsb
 from PST import pst_eval
+
+def njit(*args, **kwargs):
+
+    if "fastmath" not in kwargs:
+        kwargs["fastmath"] = True
+    if "nogil" not in kwargs:
+        kwargs["nogil"] = True
+    if "boundscheck" not in kwargs:
+        kwargs["boundscheck"] = False
+    if "error_model" not in kwargs:
+        kwargs["error_model"] = "numpy"
+    return _njit(*args, **kwargs)
 
 FILE_MASKS = np.array(
     [np.uint64(0x0101010101010101 << i) for i in range(8)], dtype=np.uint64
@@ -668,13 +680,13 @@ def eval_king_safety(phase, bb_arr, occ_all, side):
         activity = int32(0)
 
         if dx == 0:
-            parity = -15 if (dy & 1) else 15
+            parity = -2 if (dy & 1) else 2
             activity += sign * (7 - dy) * parity
         if dy == 0:
-            parity = -15 if (dx & 1) else 15
+            parity = -2 if (dx & 1) else 2
             activity += sign * (7 - dx) * parity
         if dx == dy:
-            parity = -10 if (dx & 1) else 10
+            parity = -2 if (dx & 1) else 2
             activity += sign * (7 - dx) * parity
 
         score += (int64(activity) * eg_scale) >> 8
@@ -1165,6 +1177,51 @@ def eval_space(phase, bb_arr, occ_all):
     )
 
 
+@njit(fastmath=True, nogil=True, boundscheck=True, error_model="python")
+def evaluate_board(board):
+    bb_arr = board.bitboard
+    occ_all = board.occupancy[2]
+    side = board.side
+
+    phase = compute_phase(bb_arr)
+
+    (
+        w_pawn_atks,
+        b_pawn_atks,
+        w_minor_atks,
+        b_minor_atks,
+        w_major_atks,
+        b_major_atks,
+    ) = compute_attack_maps_parallel(bb_arr, occ_all)
+
+    w_all_atks = w_pawn_atks | w_minor_atks | w_major_atks
+    b_all_atks = b_pawn_atks | b_minor_atks | b_major_atks
+
+    score = eval_pieces(phase, bb_arr, occ_all, w_pawn_atks, b_pawn_atks)
+    score += eval_piece_safety(
+        phase,
+        bb_arr,
+        w_all_atks,
+        b_all_atks,
+        w_pawn_atks,
+        b_pawn_atks,
+        w_minor_atks,
+        b_minor_atks,
+    )
+    score += eval_pawns(phase, bb_arr, occ_all, w_all_atks, b_all_atks)
+
+    w_king_sq = lsb(bb_arr[5])
+    b_king_sq = lsb(bb_arr[11])
+
+    score += eval_king_safety(phase, bb_arr, occ_all, side)
+    score += eval_basic_endgames(phase, bb_arr, w_king_sq, b_king_sq)
+    score += eval_space(phase, bb_arr, occ_all)
+
+    tempo = 15 if side == 0 else -15
+
+    return score + tempo
+
+
 spec = [("board", Board.class_type.instance_type)]
 
 
@@ -1174,44 +1231,4 @@ class Evaluation:
         self.board = board
 
     def evaluate(self):
-        bb_arr = self.board.bitboard
-        occ_all = self.board.occupancy[2]
-        side = self.board.side
-
-        phase = compute_phase(bb_arr)
-
-        (
-            w_pawn_atks,
-            b_pawn_atks,
-            w_minor_atks,
-            b_minor_atks,
-            w_major_atks,
-            b_major_atks,
-        ) = compute_attack_maps_parallel(bb_arr, occ_all)
-
-        w_all_atks = w_pawn_atks | w_minor_atks | w_major_atks
-        b_all_atks = b_pawn_atks | b_minor_atks | b_major_atks
-
-        score = eval_pieces(phase, bb_arr, occ_all, w_pawn_atks, b_pawn_atks)
-        score += eval_piece_safety(
-            phase,
-            bb_arr,
-            w_all_atks,
-            b_all_atks,
-            w_pawn_atks,
-            b_pawn_atks,
-            w_minor_atks,
-            b_minor_atks,
-        )
-        score += eval_pawns(phase, bb_arr, occ_all, w_all_atks, b_all_atks)
-
-        w_king_sq = lsb(bb_arr[5])
-        b_king_sq = lsb(bb_arr[11])
-
-        score += eval_king_safety(phase, bb_arr, occ_all, side)
-        score += eval_basic_endgames(phase, bb_arr, w_king_sq, b_king_sq)
-        score += eval_space(phase, bb_arr, occ_all)
-
-        tempo = 15 if side == 0 else -15
-
-        return score + tempo
+        return evaluate_board(self.board)

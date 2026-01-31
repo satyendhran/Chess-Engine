@@ -1,7 +1,7 @@
 import time
 
 import numpy as np
-from numba import int16, int64, njit, uint8, uint64
+from numba import int16, int64, njit as _njit, uint8, uint64
 from numba.experimental import jitclass
 
 from Board import is_square_attacked
@@ -16,7 +16,7 @@ from Board_Move_gen import (
     unmove,
 )
 from Constants import Color, Pieces
-from Evaluation import Evaluation, popcount
+from Evaluation import evaluate_board, popcount
 from Move_gen_pieces import (
     get_bishop_attacks,
     get_king_attacks,
@@ -26,6 +26,17 @@ from Move_gen_pieces import (
     get_rook_attacks,
 )
 from pregen.Utilities import count_bits, get_lsb1_index, pop_bit
+
+def njit(*args, **kwargs):
+    kwargs["fastmath"] = True if "fastmath" not in kwargs else kwargs["fastmath"]
+    kwargs["nogil"] = True if "nogil" not in kwargs else kwargs["nogil"]
+    kwargs["boundscheck"] = False
+    kwargs["error_model"] = "numpy"
+    return _njit(*args, **kwargs)
+
+@njit(inline="always")
+def eval_inline(board):
+    return evaluate_board(board)
 
 PIECE_VALUE = np.array([100, 320, 330, 500, 900, 20000], dtype=np.int32)
 P_K = int(Pieces.K)
@@ -421,8 +432,8 @@ def score_move(board, mv, ply, killers, history, tt_move, capture_history, is_en
         if piece >= 13:
             return int64(0)
 
-        victim_vals = np.array([100, 320, 330, 500, 900, 0, 100, 320, 330, 500, 900, 0, 0], dtype=np.int64)
-        victim, attacker = victim_vals[captured], victim_vals[piece]
+        victim = PIECE_VALUES[captured] if captured < len(PIECE_VALUES) else int64(0)
+        attacker = PIECE_VALUES[piece] if piece < len(PIECE_VALUES) else int64(0)
 
         score = int64(15000) + victim * int64(100) - attacker
 
@@ -514,7 +525,7 @@ def sort_moves_with_scores(
                     score_i = score_j
         return
 
-    scores = np.zeros(mvs.counter, dtype=np.int64)
+    scores = np.empty(mvs.counter, dtype=np.int64)
     for i in range(mvs.counter):
         if i >= len(mvs.moves):
             break
@@ -574,8 +585,7 @@ def quiescence_negamax(
     in_check = is_in_check(board, board.side)
 
 
-    evaluator = Evaluation(board)
-    stand_pat = evaluator.evaluate()
+    stand_pat = eval_inline(board)
     if len(stats) > 3:
         stats[3] += 1
     if board.side != COLOR_WHITE:
@@ -691,8 +701,7 @@ def negamax(
         return int64(0)
 
     if ply >= MAX_SEARCH_DEPTH:
-        evaluator = Evaluation(board)
-        eval_score = evaluator.evaluate()
+        eval_score = eval_inline(board)
         if len(stats) > 3:
             stats[3] += 1
         if board.side != COLOR_WHITE:
@@ -738,14 +747,16 @@ def negamax(
         if tt_found and tt_f != TT_EMPTY:
             static_eval = tt_s
         else:
-            evaluator = Evaluation(board)
-            static_eval = evaluator.evaluate()
+            static_eval = eval_inline(board)
             if len(stats) > 3:
                 stats[3] += 1
             if board.side != COLOR_WHITE:
                 static_eval = -static_eval
 
-    is_tactical = is_tactical_position(board)
+    is_tactical = False
+    if not in_check and not is_pv_node and not is_basic_eg:
+        if depth <= int64(2) or depth >= int64(4):
+            is_tactical = is_tactical_position(board)
 
     if (
             not is_pv_node
@@ -848,7 +859,8 @@ def negamax(
         reduction = int64(0)
         is_capture = get_capture_piece(mv) != uint8(12)
         is_promo = is_promotion_move(mv)
-        gives_check = is_in_check(board, 1 - board.side)
+        gives_check = False
+        gives_check_known = False
 
         lmr_threshold = 8 if is_basic_eg else (6 if is_endgame else 4)
 
@@ -858,15 +870,17 @@ def negamax(
                 and legal_moves > lmr_threshold
                 and not is_capture
                 and not is_promo
-                and not gives_check
                 and not is_tactical
                 and not is_basic_eg
         ):
-            reduction = int64(1)
-            threshold = 24 if is_endgame else 16
-            if depth <= int64(LMP_DEPTH) and legal_moves > threshold and not is_basic_eg:
-                unmove(board, mv, a, b, c)
-                continue
+            gives_check = is_in_check(board, 1 - board.side)
+            gives_check_known = True
+            if not gives_check:
+                reduction = int64(1)
+                threshold = 24 if is_endgame else 16
+                if depth <= int64(LMP_DEPTH) and legal_moves > threshold and not is_basic_eg:
+                    unmove(board, mv, a, b, c)
+                    continue
 
         if (
                 not is_pv_node
@@ -874,15 +888,18 @@ def negamax(
                 and depth <= int64(2)
                 and not is_capture
                 and not is_promo
-                and not gives_check
                 and not is_basic_eg
                 and not is_endgame
         ):
-            margin_idx = int(depth)
-            if margin_idx < len(FUTILITY_MARGIN):
-                if static_eval + FUTILITY_MARGIN[margin_idx] <= alpha:
-                    unmove(board, mv, a, b, c)
-                    continue
+            if not gives_check_known:
+                gives_check = is_in_check(board, 1 - board.side)
+                gives_check_known = True
+            if not gives_check:
+                margin_idx = int(depth)
+                if margin_idx < len(FUTILITY_MARGIN):
+                    if static_eval + FUTILITY_MARGIN[margin_idx] <= alpha:
+                        unmove(board, mv, a, b, c)
+                        continue
 
         if legal_moves == 1:
             score = -negamax(
@@ -1005,7 +1022,7 @@ def count_repetitions(game_history, current_hash, halfmove):
 
     lookback = min(halfmove, len(game_history) - 1)
 
-    for i in range(lookback):
+    for i in range(0, lookback, 2):
         if i >= len(game_history):
             break
         if game_history[len(game_history) - 1 - i] == current_hash:
@@ -1200,6 +1217,7 @@ class SingleSearch:
             increment=0,
             movestogo=30,
             game_history=None,
+            info_callback=None,
     ):
         self.board = board
         self.depth = depth if depth > 0 else 64
@@ -1210,6 +1228,7 @@ class SingleSearch:
         self.game_history = (
             game_history if game_history is not None else np.zeros(512, dtype=np.uint64)
         )
+        self.info_callback = info_callback
 
     def search(self):
         killers = np.zeros((2, MAX_PLY), dtype=np.uint64)
@@ -1271,13 +1290,19 @@ class SingleSearch:
                     mi = -mi
                 ss = f"mate {mi}"
 
-            print(f"info depth {d} score {ss} pv {move_to_uci(mv)}")
+            msg = f"info depth {d} score {ss} pv {move_to_uci(mv)}"
+            if self.info_callback:
+                self.info_callback(msg)
+            else:
+                print(msg)
 
             elapsed = max(1e-6, time.time() - t0)
             nps = int(int(stats[0]) / elapsed)
-            print(
-                f"info stats depth {d} nodes {int(stats[0])} tt_hits {int(stats[1])} tt_cutoffs {int(stats[2])} evals {int(stats[3])} nps {nps} DEBUG {stats[4]}"
-            )
+            msg_stats = f"info stats depth {d} nodes {int(stats[0])} tt_hits {int(stats[1])} tt_cutoffs {int(stats[2])} evals {int(stats[3])} nps {nps} DEBUG {stats[4]}"
+            if self.info_callback:
+                self.info_callback(msg_stats)
+            else:
+                print(msg_stats)
 
         return self.best_move
 
